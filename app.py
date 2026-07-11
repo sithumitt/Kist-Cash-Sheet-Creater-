@@ -110,7 +110,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     printable_width = 523 if is_large_dataset else 543
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.14,  # Expanded Invoice Number space for long tracking IDs
+        printable_width * 0.14,  # Invoice Number space
         printable_width * 0.10,  # Shop Name
         printable_width * 0.09,  # Amount
         printable_width * 0.05,  # BNW
@@ -314,10 +314,18 @@ def parse_pdf_file(uploaded_file):
     # Pre-compiled regex pattern to capture values at the end of valid ledger rows
     amount_pattern = re.compile(r'([\d,]+\.\d{2})\s*$')
     
+    # Sliding History Buffer to look back into multiline outputs safely
+    history_lines = []
+
     for line in lines:
         line_str = line.strip()
         if not line_str:
             continue
+            
+        history_lines.append(line_str)
+        # Keep only the last 4 rows in active loop memory context
+        if len(history_lines) > 4:
+            history_lines.pop(0)
             
         # Parse the money value at the right end of the active row string
         amt_match = amount_pattern.search(line_str)
@@ -333,23 +341,25 @@ def parse_pdf_file(uploaded_file):
                         pass
                 continue
                 
-            # Process out numeric invoice indicators tracking backwards from the currency block
-            # Matches standard 'TI' codes or long numerical sequences anywhere in the row
-            numbers = re.findall(r'\d+', line_str.replace(amt_text, ''))
+            # Fallback evaluation context targets history lines to grab the segmented invoice numbers
+            final_invoice = None
             
-            if numbers:
-                # Find the longest consecutive cluster of digits (corresponds to the main invoice sequence number)
-                longest_digits = max(numbers, key=len)
+            # Walk backward from current row index to evaluate previous string segments
+            for hist_line in reversed(history_lines):
+                # Clean out current amount field to prevent extracting its decimal integers
+                clean_hist = hist_line.replace(amt_text, '').strip()
                 
-                # Rule: Apply a safety fallback if noise matches a single index counter digit
-                if len(longest_digits) < 2 and len(numbers) > 1:
-                    # Sort by digit string width tracking sizes downwards
-                    sorted_numbers = sorted(numbers, key=len, reverse=True)
-                    longest_digits = sorted_numbers[0]
-                
-                # Dynamic Rule: Slice and extract strictly the last 4 digits
-                final_invoice = longest_digits[-4:]
-                
+                # Capture digits clusters
+                numbers = re.findall(r'\d+', clean_hist)
+                if numbers:
+                    # Find the primary sequential identifier (longer digit sets take priority over row indexes)
+                    candidate = max(numbers, key=len)
+                    # Slices strictly the last 4 digits
+                    if len(candidate) >= 3:
+                        final_invoice = candidate[-4:]
+                        break
+            
+            if final_invoice:
                 try:
                     amt_val = float(amt_text.replace(',', ''))
                     # Protect data array elements from duplicated value injection rows
