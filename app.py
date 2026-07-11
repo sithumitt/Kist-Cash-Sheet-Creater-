@@ -30,10 +30,14 @@ st.markdown("""
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
     
-    # Standard printable margin layout values (0.5 inch / 36 points)
+    # Rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
+    is_large_dataset = len(invoices) > 35
+    
+    # Margins dynamically adjusted based on the required page budget rule
+    margin_val = 36 if is_large_dataset else 26
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
-        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+        rightMargin=margin_val, leftMargin=margin_val, topMargin=margin_val, bottomMargin=margin_val
     )
     body_elements = []
     
@@ -135,66 +139,73 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Direct Copy Table Parsing Engine ---
+# --- Streamlined Line-by-Line Direct Processing Parser Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
-    grand_total = 0.0
-    
+    total_amount = 0.0
+    invoice_seen = set()
+
+    # Matches standard TI/IN codes or the long composite invoice strings (e.g., 26JUL_1201_17300100009)[cite: 2]
+    invoice_pattern = re.compile(r'\b(TI\d{5,7}|IN\d{5,7}|\d{2}[A-Z]{3}_[\w\d_]+)\b')
+    amount_pattern = re.compile(r'\d[\d,]*\.\d{2}')
+
     with pdfplumber.open(uploaded_file) as pdf:
+        pending_invoice = None
+
         for page in pdf.pages:
-            tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    if not row or len(row) < 2:
-                        continue
-                    
-                    # Clean all cells in the row from whitespace and newlines
-                    cleaned_row = [str(cell).strip().replace('\n', ' ') if cell else "" for cell in row]
-                    
-                    # Find the last non-empty element as the amount cell
-                    non_empty_cells = [c for c in cleaned_row if c]
-                    if not non_empty_cells:
-                        continue
-                        
-                    last_cell = non_empty_cells[-1]
-                    
-                    # Verify if the last cell is a valid float value amount format (e.g. 22,050.00)
-                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
-                        continue
-                    
-                    # Capture grand total lines
-                    row_text = " ".join(cleaned_row).lower()
-                    if "total" in row_text:
-                        if "grand total" in row_text or "total" in cleaned_row:
-                            try:
-                                grand_total = float(last_cell.replace(',', ''))
-                            except ValueError:
-                                pass
-                        continue
-                    
-                    # Dynamic search: look for the cell containing the long invoice format string
-                    invoice_raw_val = None
-                    for cell in cleaned_row:
-                        if re.search(r'\b\d{2}[A-Z]{3}_\d{4}', cell) or "26JUL" in cell:
-                            invoice_raw_val = cell
-                            break
-                            
-                    # Drop headers or unparsed columns
-                    if not invoice_raw_val or "invoice" in invoice_raw_val.lower():
+            text = page.extract_text()
+            if not text:
+                continue
+
+            lines = text.splitlines()
+            for line in lines:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+
+                # 1. Capture dynamic invoice string segments
+                inv_match = invoice_pattern.search(line_str)
+                if inv_match:
+                    pending_invoice = inv_match.group()
+
+                # 2. Capture final sum total metrics from page footers[cite: 2]
+                if line_str.lower().startswith("total"):
+                    amts = amount_pattern.findall(line_str)
+                    if amts:
+                        try:
+                            total_amount = float(amts[-1].replace(",", ""))
+                        except ValueError:
+                            pass
+                    continue
+
+                # 3. Process individual billing amounts found inside the line context
+                amts = amount_pattern.findall(line_str)
+                if pending_invoice and amts:
+                    # Filter out strings representing standard column index number counters
+                    if line_str.startswith(pending_invoice) and len(amts) == 0:
                         continue
                         
                     try:
-                        amt_val = float(last_cell.replace(',', ''))
-                        # De-duplicate entries cleanly
-                        if not any(i['invoice'] == invoice_raw_val for i in invoices):
-                            invoices.append({'invoice': invoice_raw_val, 'amount': amt_val})
+                        amt_val = float(amts[-1].replace(",", ""))
+                        
+                        # Apply your raw data storage selection rule
+                        if pending_invoice not in invoice_seen and "invoice" not in pending_invoice.lower():
+                            invoices.append({
+                                "invoice": pending_invoice,
+                                "amount": amt_val
+                            })
+                            invoice_seen.add(pending_invoice)
+                            
+                        # Clear anchor variable sequence loop context
+                        pending_invoice = None
                     except ValueError:
                         pass
 
-    if invoices and grand_total == 0.0:
-        grand_total = sum(i['amount'] for i in invoices)
+    # Fallback arithmetic allocation logic loop
+    if total_amount == 0.0 and invoices:
+        total_amount = sum(i["amount"] for i in invoices)
 
-    return invoices, grand_total
+    return invoices, total_amount
 
 # --- Main App Interface ---
 st.html("""
