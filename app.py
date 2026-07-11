@@ -5,7 +5,7 @@ import pdfplumber
 
 # ReportLab core engines for precise programmatic PDF layout
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -30,14 +30,10 @@ st.markdown("""
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
     
-    # Rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
-    is_large_dataset = len(invoices) > 35
-    
-    # Margins dynamically adjusted based on the required page budget rule
-    margin_val = 36 if is_large_dataset else 26
+    # Standard printable margin layout values (0.5 inch / 36 points)
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
-        rightMargin=margin_val, leftMargin=margin_val, topMargin=margin_val, bottomMargin=margin_val
+        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
     )
     body_elements = []
     
@@ -45,37 +41,26 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold',
-        fontSize=16 if is_large_dataset else 14, leading=20 if is_large_dataset else 16, 
-        alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
+        fontSize=16, leading=20, alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
     )
     meta_style = ParagraphStyle(
         'MetaStyle', parent=styles['Normal'], fontName='Helvetica-Bold',
-        fontSize=9.5 if is_large_dataset else 8.5, leading=13 if is_large_dataset else 10, 
-        spaceAfter=10 if is_large_dataset else 6, textColor=colors.HexColor("#000000")
-    )
-    section_style = ParagraphStyle(
-        'SectionStyle', parent=styles['Heading2'], fontName='Helvetica-Bold',
-        fontSize=12 if is_large_dataset else 11, leading=15 if is_large_dataset else 13, 
-        spaceBefore=8 if is_large_dataset else 4, spaceAfter=6 if is_large_dataset else 4, textColor=colors.HexColor("#000000")
+        fontSize=9.5, leading=13, spaceAfter=10, textColor=colors.HexColor("#000000")
     )
     cell_style = ParagraphStyle(
         'CellStyle', parent=styles['Normal'], fontName='Helvetica', 
-        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=1
+        fontSize=8.5, leading=10.5, alignment=1
     )
     cell_bold = ParagraphStyle(
         'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', 
-        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=1
-    )
-    cell_left = ParagraphStyle(
-        'CellLeft', parent=styles['Normal'], fontName='Helvetica', 
-        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=0
+        fontSize=8.5, leading=10.5, alignment=1
     )
     cell_right = ParagraphStyle(
         'CellRight', parent=styles['Normal'], fontName='Helvetica', 
-        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=2
+        fontSize=8.5, leading=10.5, alignment=2
     )
 
-    # ==================== PAGE 1 ====================
+    # ==================== PAGE 1 DATA ENTRIES ====================
     body_elements.append(Paragraph("KIST DAY CASH SHEET", title_style))
     body_elements.append(Paragraph("Date : ___________________    Route : ___________________    No.Bill : ___________________", meta_style))
     
@@ -106,8 +91,8 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Printable horizontal width mapping proportions 
-    printable_width = 523 if is_large_dataset else 543
+    # Full horizontal dynamic mapping width span configurations (Total 523 points)
+    printable_width = 523
     col_widths = [
         printable_width * 0.04,  # No
         printable_width * 0.14,  # Invoice Number space
@@ -123,22 +108,21 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         printable_width * 0.04   # Rtn
     ]
     
-    padding_val = 5.5 if is_large_dataset else 2.5
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), padding_val),
-        ('BOTTOMPADDING', (0,0), (-1,-1), padding_val),
+        ('TOPPADDING', (0,0), (-1,-1), 5.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5.5),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), 
     ])
     
     body_elements.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    body_elements.append(Spacer(1, 10 if is_large_dataset else 6))
+    body_elements.append(Spacer(1, 10))
     
     sales_labels = [
         "Biscuits sale : _______________________", "Nectar Sale : _______________________",
@@ -147,146 +131,6 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for label in sales_labels:
         body_elements.append(Paragraph(label, meta_style))
         
-    # ==================== SEGREGATION BOUNDARY ====================
-    body_elements.append(PageBreak())
-    
-    body_elements.append(Paragraph("Cash Receivables", section_style))
-    rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
-    rec_data = [[Paragraph(rh, cell_bold) for rh in rec_headers]]
-    for r_idx in range(1, 11):
-        rec_data.append([Paragraph(str(r_idx), cell_style)] + [Paragraph("", cell_style) for _ in range(5)])
-        
-    rec_widths = [
-        printable_width * 0.06,
-        printable_width * 0.14,
-        printable_width * 0.35,
-        printable_width * 0.15,
-        printable_width * 0.15,
-        printable_width * 0.15
-    ]
-    rec_padding = 4.5 if is_large_dataset else 2.5
-    rec_table_style = TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.white),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), rec_padding),
-        ('BOTTOMPADDING', (0,0), (-1,-1), rec_padding),
-    ])
-    body_elements.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
-    body_elements.append(Spacer(1, 8 if is_large_dataset else 5))
-    
-    body_elements.append(Paragraph("Cash Sheet Balancing", section_style))
-    
-    left_rows = [
-        ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
-        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
-        ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
-    ]
-    
-    right_rows_data = [
-        ("Cash Balance", ""),
-        ("Total Day Cash", ""),
-        ("Total Credit Received", ""),
-        ("Total Expenses", ""),
-        ("Banked Value.", "")
-    ]
-
-    if is_large_dataset:
-        left_table_data = []
-        left_style_actions = []
-        for r_idx, (item, val) in enumerate(left_rows):
-            is_bal = "Balance" in item or item == "System Sale"
-            p_style = cell_bold if is_bal else cell_left
-            v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica', fontSize=8.5)
-            left_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
-            if "Balance" in item:
-                left_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
-                
-        right_table_data = []
-        for r_idx, (item, val) in enumerate(right_rows_data):
-            p_style = cell_bold if r_idx == 0 else cell_left
-            right_table_data.append([Paragraph(item, p_style), Paragraph(val, cell_style)])
-
-        w_left = printable_width * 0.49
-        w_right = printable_width * 0.49
-        
-        left_table = Table(left_table_data, colWidths=[w_left*0.58, w_left*0.42])
-        left_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-            ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
-        ] + left_style_actions))
-        
-        right_table = Table(right_table_data, colWidths=[w_right*0.58, w_right*0.42])
-        right_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-            ('BACKGROUND', (0,0), (-1,0), colors.white),
-            ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
-            ('BOTTOMPADDING', (0,3), (1,3), 36),
-        ]))
-        
-        master_balancing_table = Table([[left_table, right_table]], colWidths=[printable_width*0.50, printable_width*0.50])
-        master_balancing_table.setStyle(TableStyle([
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
-            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-        ]))
-        body_elements.append(master_balancing_table)
-    else:
-        bal_table_data = []
-        bal_style_actions = []
-        combined_rows = []
-        for item, val in left_rows:
-            combined_rows.append((item, val, "Balance" in item or item == "System Sale", False))
-        for r_idx, (item, val) in enumerate(right_rows_data):
-            combined_rows.append((item, val, False, r_idx == 0))
-            
-        for r_idx, (item, val, is_bal, is_hdr) in enumerate(combined_rows):
-            if is_hdr:
-                p_style = cell_bold
-                v_style = cell_style
-                bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.white))
-            elif is_bal:
-                p_style = cell_bold
-                v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold', fontSize=7.5)
-                bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
-            else:
-                p_style = cell_left
-                v_style = cell_right
-                
-            bal_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
-            if item == "Total Expenses":
-                bal_style_actions.append(('BOTTOMPADDING', (0, r_idx), (1, r_idx), 26))
-                
-        bal_table = Table(bal_table_data, colWidths=[printable_width * 0.58, printable_width * 0.42])
-        bal_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-            ('TOPPADDING', (0,0), (-1,-1), 2.5),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
-        ] + bal_style_actions))
-        body_elements.append(bal_table)
-
-    body_elements.append(Spacer(1, 8 if is_large_dataset else 5))
-    
-    body_elements.append(Paragraph("Calculating cash", section_style))
-    denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
-    denom_data = [denom_headers]
-    denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
-    for denom in denominations:
-        p_style = cell_bold if denom == "Total" else cell_style
-        denom_data.append([Paragraph(denom, p_style), Paragraph("", cell_style)])
-        
-    denom_table = Table(denom_data, colWidths=[printable_width*0.50, printable_width*0.50])
-    denom_padding = 3.5 if is_large_dataset else 2.2
-    denom_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.white),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), denom_padding), ('BOTTOMPADDING', (0,0), (-1,-1), denom_padding),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
-    ]))
-    body_elements.append(denom_table)
-    body_elements.append(Spacer(1, 10 if is_large_dataset else 6))
-    
-    body_elements.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
-    
     doc.build(body_elements)
     buffer.seek(0)
     return buffer
@@ -296,7 +140,6 @@ def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
     
-    # 1. Capture the raw word map tracking coordinates from the document pages
     raw_words = []
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
@@ -313,7 +156,6 @@ def parse_pdf_file(uploaded_file):
     if not raw_words:
         return [], 0.0
 
-    # 2. Sort words by page, then group into horizontal rows by their dynamic Y-height ('top')
     page_groups = {}
     for w in raw_words:
         p = w['page']
@@ -323,14 +165,12 @@ def parse_pdf_file(uploaded_file):
         
     structured_rows = []
     for p, words_on_page in page_groups.items():
-        # Sort words primarily from top-to-bottom, then left-to-right
         words_on_page.sort(key=lambda x: (x['top'], x['x0']))
         
         current_row = []
         current_top = -100.0
         
         for w in words_on_page:
-            # Group words sitting on the same horizontal line baseline (within a 3pt window tolerance)
             if abs(w['top'] - current_top) <= 3.0:
                 current_row.append(w)
             else:
@@ -341,16 +181,12 @@ def parse_pdf_file(uploaded_file):
         if current_row:
             structured_rows.append(current_row)
 
-    # 3. Step through structured rows to pair the target amounts with their true invoice tracking IDs
     for r_idx, row in enumerate(structured_rows):
         line_text = " ".join([w['text'] for w in row])
-        
-        # Check if the row terminates with a valid float billing currency format
         last_word = row[-1]['text']
         amt_match = re.search(r'^\d[\d,]*\.\d{2}$', last_word)
         
         if amt_match:
-            # Skip overall summary total calculations
             if "total" in line_text.lower():
                 if "grand total" in line_text.lower() or line_text.lower().startswith("total"):
                     try:
@@ -359,40 +195,29 @@ def parse_pdf_file(uploaded_file):
                         pass
                 continue
             
-            # Identify the Route descriptor code signature row to verify it's an invoice record line
             if not re.search(r'\b\d{3}R\d{2}\b', line_text):
                 continue
                 
-            # STRATEGY: Look at the text rows right above it to extract the real tracking code sequence safely[cite: 2]
-            # Since the code can sit 1 or 2 rows higher depending on page wrap splits[cite: 2]
             target_invoice_code = None
             
-            # Scan backward up to 3 vertical lines to trace the matching header component blocks
             for check_idx in range(max(0, r_idx - 3), r_idx):
                 check_row = structured_rows[check_idx]
                 check_text = " ".join([w['text'] for w in check_row])
                 
-                # Check for the long date signature segment string layout[cite: 2]
                 if re.search(r'\b\d{2}[A-Z]{3}_\d{4}', check_text) or re.search(r'\b\d{2}[A-Z]{3}\b', check_text):
-                    # Gather all digit clusters present inside that localized bounding context
                     all_digits = re.findall(r'\d+', check_text)
                     if all_digits:
-                        # Grab the tracking number string (longer clusters take priority over simple single row indexes)[cite: 2]
                         selected_digits = max(all_digits, key=len)
                         
-                        # Rule rule: Filter out long static system routing variables if they are accidentally selected
                         if len(selected_digits) < 3 and len(all_digits) > 1:
                             sorted_digits = sorted(all_digits, key=len, reverse=True)
                             selected_digits = sorted_digits[0]
                             
-                        # Rule: Slice strictly the final 4 digits block[cite: 2]
                         target_invoice_code = selected_digits[-4:]
                         break
                         
-            # Alternate logic fallback: Parse the current row directly if digits are on the same baseline
             if not target_invoice_code:
                 all_digits = re.findall(r'\d+', line_text.replace(last_word, ''))
-                # Filter out customer code components or route indicators
                 filtered_digits = [d for d in all_digits if len(d) <= 4 and d != "730"]
                 if filtered_digits:
                     target_invoice_code = filtered_digits[-1][-4:]
@@ -400,13 +225,11 @@ def parse_pdf_file(uploaded_file):
             if target_invoice_code:
                 try:
                     amt_val = float(last_word.replace(',', ''))
-                    # Prevent duplicated extraction injections
                     if not any(item['invoice'] == target_invoice_code for item in invoices):
                         invoices.append({'invoice': target_invoice_code, 'amount': amt_val})
                 except ValueError:
                     pass
 
-    # Fallback to compute total if sum total isn't parsed explicitly from document footers
     if invoices and grand_total == 0.0:
         grand_total = sum(i['amount'] for i in invoices)
 
