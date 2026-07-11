@@ -49,7 +49,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     )
     cell_style = ParagraphStyle(
         'CellStyle', parent=styles['Normal'], fontName='Helvetica', 
-        fontSize=8.5, leading=10.5, alignment=1
+        fontSize=8, leading=10, alignment=1
     )
     cell_bold = ParagraphStyle(
         'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', 
@@ -60,7 +60,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         fontSize=8.5, leading=10.5, alignment=2
     )
 
-    # ==================== PAGE 1 DATA ENTRIES ====================
+    # ==================== DATA ENTRIES ====================
     body_elements.append(Paragraph("KIST DAY CASH SHEET", title_style))
     body_elements.append(Paragraph("Date : ___________________    Route : ___________________    No.Bill : ___________________", meta_style))
     
@@ -83,7 +83,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         table_data.append([Paragraph(str(idx), cell_style)] + [Paragraph("", cell_style) for _ in range(11)])
         idx += 1
         
-    # System Sale summary anchor line
+    # System Sale summary anchor line put directly at the end after the 5 extra rows
     table_data.append([
         Paragraph("ST", cell_bold), Paragraph("System Sale", cell_bold), Paragraph("", cell_style),
         Paragraph(f"{total_amount:,.2f}", ParagraphStyle('ST_R', parent=cell_right, fontName='Helvetica-Bold')),
@@ -91,20 +91,20 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Full horizontal dynamic mapping width span configurations (Total 523 points)
+    # Full horizontal layout width span configurations (Total 523 points)
     printable_width = 523
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.14,  # Invoice Number space
-        printable_width * 0.10,  # Shop Name
-        printable_width * 0.09,  # Amount
-        printable_width * 0.05,  # BNW
-        printable_width * 0.065, # Cancel
-        printable_width * 0.065, # Adjust
-        printable_width * 0.05,  # Dis
-        printable_width * 0.12,  # Cash
-        printable_width * 0.12,  # Credit
-        printable_width * 0.12,  # Cheque
+        printable_width * 0.22,  # Invoice Number space expanded to show full copied raw data strings safely
+        printable_width * 0.07,  # Shop Name
+        printable_width * 0.10,  # Amount
+        printable_width * 0.04,  # BNW
+        printable_width * 0.06,  # Cancel
+        printable_width * 0.06,  # Adjust
+        printable_width * 0.04,  # Dis
+        printable_width * 0.11,  # Cash
+        printable_width * 0.11,  # Credit
+        printable_width * 0.11,  # Cheque
         printable_width * 0.04   # Rtn
     ]
     
@@ -135,100 +135,52 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Universal Spatial Coordinate Text Alignment Parsing Engine ---
+# --- Straightforward Direct Invoice Extraction Table Parser Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
     
-    raw_words = []
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
-            words = page.extract_words(y_tolerance=3, x_tolerance=3)
-            for w in words:
-                raw_words.append({
-                    'text': w['text'].strip(),
-                    'top': round(w['top'], 1),
-                    'bottom': round(w['bottom'], 1),
-                    'x0': round(w['x0'], 1),
-                    'page': page.page_number
-                })
-                
-    if not raw_words:
-        return [], 0.0
-
-    page_groups = {}
-    for w in raw_words:
-        p = w['page']
-        if p not in page_groups:
-            page_groups[p] = []
-        page_groups[p].append(w)
-        
-    structured_rows = []
-    for p, words_on_page in page_groups.items():
-        words_on_page.sort(key=lambda x: (x['top'], x['x0']))
-        
-        current_row = []
-        current_top = -100.0
-        
-        for w in words_on_page:
-            if abs(w['top'] - current_top) <= 3.0:
-                current_row.append(w)
-            else:
-                if current_row:
-                    structured_rows.append(current_row)
-                current_row = [w]
-                current_top = w['top']
-        if current_row:
-            structured_rows.append(current_row)
-
-    for r_idx, row in enumerate(structured_rows):
-        line_text = " ".join([w['text'] for w in row])
-        last_word = row[-1]['text']
-        amt_match = re.search(r'^\d[\d,]*\.\d{2}$', last_word)
-        
-        if amt_match:
-            if "total" in line_text.lower():
-                if "grand total" in line_text.lower() or line_text.lower().startswith("total"):
+            tables = page.extract_tables()
+            for table in tables:
+                for row in table:
+                    if not row or len(row) < 3:
+                        continue
+                    
+                    # Clean spacing from rows
+                    cleaned_row = [str(cell).strip() if cell else "" for cell in row]
+                    
+                    # Identify rows matching invoice line structure based on Net Amt layout[cite: 2]
+                    last_cell = cleaned_row[-1]
+                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
+                        continue
+                        
+                    # Calculate/Extract grand total signature rows safely[cite: 2]
+                    row_text = " ".join(cleaned_row).lower()
+                    if "total" in row_text:
+                        if "grand total" in row_text or cleaned_row[2].lower() == "total":
+                            try:
+                                grand_total = float(last_cell.replace(',', ''))
+                            except ValueError:
+                                pass
+                        continue
+                    
+                    # Target picklist structure: cell at index 1 is 'Invoice'[cite: 2]
+                    # Direct Strategy: copy exact text block raw string directly into the list layout[cite: 2]
+                    invoice_raw_val = cleaned_row[1].replace('\n', ' ')
+                    
+                    # Validate row content index doesn't represent standard metadata headings
+                    if "invoice" in invoice_raw_val.lower() or not invoice_raw_val:
+                        continue
+                        
                     try:
-                        grand_total = float(last_word.replace(',', ''))
+                        amt_val = float(last_cell.replace(',', ''))
+                        # De-duplicate entry rows seamlessly
+                        if not any(i['invoice'] == invoice_raw_val for i in invoices):
+                            invoices.append({'invoice': invoice_raw_val, 'amount': amt_val})
                     except ValueError:
                         pass
-                continue
-            
-            if not re.search(r'\b\d{3}R\d{2}\b', line_text):
-                continue
-                
-            target_invoice_code = None
-            
-            for check_idx in range(max(0, r_idx - 3), r_idx):
-                check_row = structured_rows[check_idx]
-                check_text = " ".join([w['text'] for w in check_row])
-                
-                if re.search(r'\b\d{2}[A-Z]{3}_\d{4}', check_text) or re.search(r'\b\d{2}[A-Z]{3}\b', check_text):
-                    all_digits = re.findall(r'\d+', check_text)
-                    if all_digits:
-                        selected_digits = max(all_digits, key=len)
-                        
-                        if len(selected_digits) < 3 and len(all_digits) > 1:
-                            sorted_digits = sorted(all_digits, key=len, reverse=True)
-                            selected_digits = sorted_digits[0]
-                            
-                        target_invoice_code = selected_digits[-4:]
-                        break
-                        
-            if not target_invoice_code:
-                all_digits = re.findall(r'\d+', line_text.replace(last_word, ''))
-                filtered_digits = [d for d in all_digits if len(d) <= 4 and d != "730"]
-                if filtered_digits:
-                    target_invoice_code = filtered_digits[-1][-4:]
-            
-            if target_invoice_code:
-                try:
-                    amt_val = float(last_word.replace(',', ''))
-                    if not any(item['invoice'] == target_invoice_code for item in invoices):
-                        invoices.append({'invoice': target_invoice_code, 'amount': amt_val})
-                except ValueError:
-                    pass
 
     if invoices and grand_total == 0.0:
         grand_total = sum(i['amount'] for i in invoices)
