@@ -45,7 +45,6 @@ st.markdown("""
 
 # --- Helper functions for Word Table Styling ---
 def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
-    """Set inner cell padding in dxa (1 pt = 20 dxa)"""
     tcPr = cell._tc.get_or_add_tcPr()
     tcMar = OxmlElement('w:tcMar')
     for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
@@ -56,12 +55,10 @@ def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
     tcPr.append(tcMar)
 
 def set_cell_background(cell, hex_color):
-    """Set cell shading color"""
     shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{hex_color}"/>')
     cell._tc.get_or_add_tcPr().append(shading)
 
 def set_table_borders(table):
-    """Apply a simple clean border to tables"""
     tblPr = table._tbl.tblPr
     borders = parse_xml(
         '<w:tblBorders %s>'
@@ -94,19 +91,16 @@ def generate_cash_sheet(invoices, total_amount):
     run.font.bold = True
     run.font.name = 'Arial'
 
-    # Meta Section
     meta_p = doc.add_paragraph()
     meta_p.paragraph_format.space_after = Pt(12)
     meta_p.add_run("Date : ___________________    Route : ___________________    No.Bill : ___________________").font.name = 'Arial'
 
-    # Columns definitions
     headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
     
     table = doc.add_table(rows=1, cols=12)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(table)
     
-    # Style Header
     hdr_cells = table.rows[0].cells
     for i, heading_text in enumerate(headers):
         hdr_cells[i].text = heading_text
@@ -119,16 +113,14 @@ def generate_cash_sheet(invoices, total_amount):
             r.font.size = Pt(9)
             r.font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
-    # Populate Data Rows
     idx = 1
     for item in invoices:
         row_cells = table.add_row().cells
         row_cells[0].text = str(idx)
         row_cells[1].text = str(item['invoice'])
-        row_cells[2].text = "" # Shop Name empty
+        row_cells[2].text = "" 
         row_cells[3].text = f"{item['amount']:.2f}"
         
-        # Format alignments and font sizes
         for c_idx, cell in enumerate(row_cells):
             set_cell_margins(cell, top=80, bottom=80)
             p = cell.paragraphs[0]
@@ -139,7 +131,6 @@ def generate_cash_sheet(invoices, total_amount):
                 p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         idx += 1
 
-    # Add 'ST' / 'System Sale' row
     st_cells = table.add_row().cells
     st_cells[0].text = "ST"
     st_cells[1].text = "System Sale"
@@ -158,7 +149,6 @@ def generate_cash_sheet(invoices, total_amount):
         elif c_idx == 3:
             p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # Add 5 extra rows
     for _ in range(5):
         extra_cells = table.add_row().cells
         extra_cells[0].text = str(idx)
@@ -169,13 +159,11 @@ def generate_cash_sheet(invoices, total_amount):
                 cell.paragraphs[0].runs[0].font.size = Pt(9.5)
         idx += 1
 
-    # Set exact explicit widths
     col_widths = [Inches(0.35), Inches(1.1), Inches(1.6), Inches(0.9), Inches(0.35), Inches(0.45), Inches(0.5), Inches(0.45), Inches(0.5), Inches(0.5), Inches(0.5), Inches(0.4)]
     for row in table.rows:
         for i, width in enumerate(col_widths):
             row.cells[i].width = width
 
-    # Summary Sales fields below table
     doc.add_paragraph().paragraph_format.space_before = Pt(12)
     sales_labels = ["Biscuits sale : _______________________", "Nectar Sale : _______________________", "Water Sale : _______________________", "Total Sale : _______________________"]
     for label in sales_labels:
@@ -191,7 +179,6 @@ def generate_cash_sheet(invoices, total_amount):
     run.font.size = Pt(14)
     run.font.bold = True
     
-    # Table 1: Receivables
     rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
     rec_table = doc.add_table(rows=1, cols=6)
     rec_table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -219,7 +206,6 @@ def generate_cash_sheet(invoices, total_amount):
         for i, w in enumerate(rec_widths):
             row.cells[i].width = w
 
-    # Section: Cash Sheet Balancing
     p_bal = doc.add_paragraph()
     p_bal.paragraph_format.space_before = Pt(18)
     run_bal = p_bal.add_run("Cash Sheet Balancing")
@@ -229,7 +215,6 @@ def generate_cash_sheet(invoices, total_amount):
     master_table = doc.add_table(rows=1, cols=2)
     master_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     
-    # Left Table: Balancing Metrics
     cell_left = master_table.rows[0].cells[0]
     cell_left.width = Inches(3.8)
     sub_table_left = cell_left.add_table(rows=0, cols=2)
@@ -255,7 +240,6 @@ def generate_cash_sheet(invoices, total_amount):
         row_cells[1].width = Inches(1.5)
         row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # Right Table: Cash Balance Context
     cell_right = master_table.rows[0].cells[1]
     cell_right.width = Inches(3.7)
     sub_table_right = cell_right.add_table(rows=1, cols=2)
@@ -278,9 +262,8 @@ def generate_cash_sheet(invoices, total_amount):
         row_cells[0].width = Inches(2.2)
         row_cells[1].width = Inches(1.5)
         if is_expense:
-            set_cell_margins(row_cells[0], top=80, bottom=400) # Vertical space allocated for expenses entries
+            set_cell_margins(row_cells[0], top=80, bottom=400)
 
-    # Section: Calculating cash
     p_calc = doc.add_paragraph()
     p_calc.paragraph_format.space_before = Pt(18)
     run_calc = p_calc.add_run("Calculating cash")
@@ -315,18 +298,16 @@ def generate_cash_sheet(invoices, total_amount):
             set_cell_background(row_cells[1], "EBF2F8")
             row_cells[0].paragraphs[0].runs[0].font.bold = True
 
-    # Footer metrics tracking
     p_foot = doc.add_paragraph()
     p_foot.paragraph_format.space_before = Pt(16)
     p_foot.add_run("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________").font.name = 'Arial'
 
-    # Save to dynamic memory stream
     target_stream = io.BytesIO()
     doc.save(target_stream)
     target_stream.seek(0)
     return target_stream
 
-# --- PDF Extractor Engine ---
+# --- Dynamic PDF Table Section Target Extractor Engine ---
 def parse_pdf_file(uploaded_file):
     reader = PdfReader(uploaded_file)
     full_text = ""
@@ -337,22 +318,43 @@ def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
     
-    # Process rows matching table structures
-    invoice_pattern = re.compile(r'^\s*(\d+)\s*\|\s*([A-Za-z0-9]+)\s*\|\s*[A-Za-z0-9]+\s*\|[^\|]+\|\s*[^\|]+\|\s*([\d,]+\.\d{2})')
-    total_pattern = re.compile(r'Total\s*\|\s*([\d,]+\.\d{2})')
-
+    # Flags to target the specific Invoice list structural boundaries
+    in_invoice_section = False
+    
+    # Strict regex matching columns: No | Invoice | Customer Code | Customer Name | Sales Route | Net Amt (LKR)
+    invoice_row_pattern = re.compile(r'^\s*(\d+)\s*\|\s*([A-Za-z0-9]+)\s*\|\s*([A-Za-z0-9]+)\s*\|')
+    
     for line in lines:
-        if 'Total' in line:
-            tot_match = total_pattern.search(line)
-            if tot_match:
-                grand_total = float(tot_match.group(1).replace(',', ''))
-        else:
-            match = invoice_pattern.match(line)
-            if match:
-                inv_num = match.group(2).strip()
-                amt = float(match.group(3).replace(',', ''))
-                invoices.append({'invoice': inv_num, 'amount': amt})
+        cleaned_line = line.strip()
+        
+        # Identify start of target table section
+        if "Net Amt (LKR)" in cleaned_line:
+            in_invoice_section = True
+            continue
+            
+        if in_invoice_section:
+            # Check for grand total end pattern line
+            if "Total" in cleaned_line and "|" in cleaned_line:
+                parts = [p.strip() for p in cleaned_line.split("|")]
+                if len(parts) >= 2:
+                    try:
+                        grand_total = float(parts[-1].replace(',', ''))
+                    except ValueError:
+                        pass
+                continue
                 
+            # Parse normal structural rows
+            match = invoice_row_pattern.match(cleaned_line)
+            if match:
+                parts = [p.strip() for p in cleaned_line.split("|")]
+                if len(parts) >= 6:
+                    inv_num = parts[1]
+                    try:
+                        amt = float(parts[5].replace(',', ''))
+                        invoices.append({'invoice': inv_num, 'amount': amt})
+                    except ValueError:
+                        pass
+                        
     return invoices, grand_total
 
 # --- Main App Execution Interface ---
