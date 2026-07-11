@@ -295,51 +295,69 @@ def generate_cash_sheet_pdf(invoices, total_amount):
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
-    full_text = ""
-
+    
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
-            text_content = page.extract_text()
-            if text_content: 
-                full_text += text_content + "\n"
+            tables = page.extract_tables()
+            for table in tables:
+                for row in table:
+                    # Filter out empty rows or header rows
+                    if not row or len(row) < 3:
+                        continue
+                    
+                    # Clean all cells in the row from whitespace or line breaks
+                    cleaned_row = [str(cell).strip().replace('\n', ' ') if cell else "" for cell in row]
+                    
+                    # Rule: The last cell must be a valid amount formatted as text currency (e.g. 22,050.00)
+                    last_cell = cleaned_row[-1]
+                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
+                        continue
+                        
+                    # Rule: Skip the summary total rows to prevent duplicating sums
+                    if any("total" in str(c).lower() for c in cleaned_row):
+                        if "grand total" in str(cleaned_row).lower() or "total" in str(cleaned_row).lower():
+                            # Capture the final total sum amount if present
+                            try:
+                                grand_total = float(last_cell.replace(',', ''))
+                            except ValueError:
+                                pass
+                        continue
+                    
+                    # Parse out the invoice code column entries dynamically
+                    invoice_str = ""
+                    for cell in cleaned_row:
+                        # Find strings matching variations of the date/route prefixes or standard numeric blocks
+                        if re.search(r'\b\d{2}[A-Z]{3}\b|\bTI\d{5,7}\b', cell):
+                            invoice_str = cell
+                            break
+                    
+                    # If direct match wasn't hit, fallback to checking cells that contain multiple digits
+                    if not invoice_str:
+                        for cell in cleaned_row:
+                            if re.search(r'\b\d{5,20}\b', cell):
+                                invoice_str = cell
+                                break
+                                
+                    if invoice_str:
+                        # Extract all numbers from the target invoice field string
+                        all_numbers = re.findall(r'\d+', invoice_str)
+                        if all_numbers:
+                            # Standard rule logic: take only the last continuous set of digits as the code
+                            target_code = all_numbers[-1]
+                            # Slice it down strictly to the last 4 digits maximum
+                            final_invoice = target_code[-4:]
+                        else:
+                            final_invoice = "0000"
+                            
+                        try:
+                            amt_val = float(last_cell.replace(',', ''))
+                            # Safeguard against double extraction
+                            if not any(i['invoice'] == final_invoice for i in invoices):
+                                invoices.append({'invoice': final_invoice, 'amount': amt_val})
+                        except ValueError:
+                            pass
 
-    # Extract the block located downstream from 'Net Amt (LKR)' marker phrase
-    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
-    if not invoice_section: 
-        return [], 0.0
-
-    invoice_block_text = invoice_section.group(1)
-    
-    # Flexible row processing strategy: works with pipe layout variations or raw multiline sequences
-    lines = invoice_block_text.split('\n')
-    current_invoice_code = None
-    
-    for line in lines:
-        # Clean background noise components
-        if "Total" in line and not invoices:
-            continue
-            
-        # 1. Flexible Multi-Format Invoice Number Extraction Logic
-        # Matches classic (TI009403) OR long system composite codes like (26JUL_1201_17300100009)
-        inv_match = re.search(r'\b(TI\d{5,7})\b|\b(\d{2}[A-Z]{3}[_\s\w\d]+?)\b', line)
-        if inv_match:
-            current_invoice_code = (inv_match.group(1) or inv_match.group(2)).strip()
-            
-        # 2. Extract final currency line balance values mapping cleanly to the active sequence block
-        amt_match = re.search(r'([\d,]+\.\d{2})\s*$', line)
-        if amt_match and current_invoice_code:
-            amt_val = float(amt_match.group(1).replace(',', ''))
-            
-            # De-duplicate entries cleanly 
-            if not any(i['invoice'] == current_invoice_code for i in invoices):
-                invoices.append({'invoice': current_invoice_code, 'amount': amt_val})
-            current_invoice_code = None
-
-    # Calculate system sale value summation anchor
-    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
-    if total_match:
-        grand_total = float(total_match.group(1).replace(',', ''))
-    elif invoices:
+    if invoices and grand_total == 0.0:
         grand_total = sum(i['amount'] for i in invoices)
 
     return invoices, grand_total
