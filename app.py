@@ -95,22 +95,20 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Proportional width redistribution targeting printable area (Total 523 points)
-    # Shop Name reduced slightly to create 4-digit formatting buffers inside BNW and Rtn
-    printable_width = 523
+    # Perfectly Balanced Explicit Point Column Widths (Total width fits A4 printable profile seamlessly)
     col_widths = [
-        printable_width * 0.04,  # No
-        printable_width * 0.11,  # Invoice Number space
-        printable_width * 0.16,  # Shop Name horizontal footprint reduced (was 0.21)
-        printable_width * 0.10,  # Amount
-        printable_width * 0.055, # BNW column expanded for 4 digits (was 0.03)
-        printable_width * 0.06,  # Cancel
-        printable_width * 0.06,  # Adjust
-        printable_width * 0.04,  # Dis
-        printable_width * 0.11,  # Cash
-        printable_width * 0.11,  # Credit
-        printable_width * 0.11,  # Cheque
-        printable_width * 0.045  # Rtn column expanded for 4 digits (was 0.02)
+        22,  # No
+        62,  # Invoice Number (Perfect for clean non-wrapped header display)
+        90,  # Shop Name (Maintains an open handwriting buffer space)
+        50,  # Amount
+        32,  # BNW (Balanced for up to 4 digits without stacking header text)
+        42,  # Cancel (Stops breaking into 'Cance l')
+        42,  # Adjust
+        30,  # Dis
+        45,  # Cash
+        45,  # Credit
+        45,  # Cheque
+        32   # Rtn (Stops breaking into stacked individual characters)
     ]
     
     main_table_style = TableStyle([
@@ -146,13 +144,9 @@ def parse_pdf_file(uploaded_file):
     total_amount = 0.0
     invoice_seen = set()
 
-    # Pattern 1: Catch composite complex prefix dates (e.g. 26JUL_1201_17300100009)[cite: 2]
-    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')[cite: 2]
-    # Pattern 2: Catch standard prefixes (e.g. IN008868, TI009403)[cite: 2]
-    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')[cite: 2]
-    # Pattern 3: Catch floating isolated identifier lines (e.g. 368 or 387)[cite: 2]
-    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')[cite: 2]
-    # Pattern 4: Strict regex filter for line monetary values at trailing edges
+    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')
+    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')
+    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')
     amount_pattern = re.compile(r'\d[\d,]*\.\d{2}')
 
     with pdfplumber.open(uploaded_file) as pdf:
@@ -179,23 +173,23 @@ def parse_pdf_file(uploaded_file):
                             pass
                     continue
 
-                comp_match = composite_invoice_pattern.search(line_str)[cite: 2]
+                comp_match = composite_invoice_pattern.search(line_str)
                 if comp_match:
-                    active_prefix = comp_match.group()[cite: 2]
+                    active_prefix = comp_match.group()
                     line_remainder = line_str.replace(active_prefix, "").strip()
                     remainder_numbers = re.findall(r'\b\d{3,4}\b', line_remainder)
                     if remainder_numbers:
-                        active_sub_id = remainder_numbers[0][cite: 2]
+                        active_sub_id = remainder_numbers[0]
                     continue
 
-                std_match = standard_invoice_pattern.search(line_str)[cite: 2]
+                std_match = standard_invoice_pattern.search(line_str)
                 if std_match:
-                    active_prefix = std_match.group()[cite: 2]
+                    active_prefix = std_match.group()
                     active_sub_id = None
 
-                iso_match = isolated_id_pattern.search(line_str)[cite: 2]
+                iso_match = isolated_id_pattern.search(line_str)
                 if iso_match and active_prefix and not active_prefix.startswith(("IN", "TI")):
-                    active_sub_id = iso_match.group()[cite: 2]
+                    active_sub_id = iso_match.group()
                     continue
 
                 amts = amount_pattern.findall(line_str)
@@ -203,10 +197,10 @@ def parse_pdf_file(uploaded_file):
                     if "net amt" in line_str.lower() or "mrp" in line_str.lower():
                         continue
 
-                    if active_prefix.startswith(("IN", "TI")):[cite: 2]
-                        invoice_identity = active_prefix[cite: 2]
-                    elif active_sub_id:[cite: 2]
-                        invoice_identity = active_sub_id[cite: 2]
+                    if active_prefix.startswith(("IN", "TI")):
+                        invoice_identity = active_prefix
+                    elif active_sub_id:
+                        invoice_identity = active_sub_id
                     else:
                         digits_found = re.findall(r'\d+', active_prefix)
                         invoice_identity = digits_found[-1] if digits_found else active_prefix
@@ -218,7 +212,6 @@ def parse_pdf_file(uploaded_file):
                             slice_length = 4
                             final_invoice_slice = invoice_identity[-slice_length:]
                             
-                            # Adaptive Deduplication resolution fallback scan loop logic
                             while final_invoice_slice in invoice_seen and slice_length < len(invoice_identity):
                                 slice_length += 1
                                 final_invoice_slice = invoice_identity[-slice_length:]
@@ -230,8 +223,8 @@ def parse_pdf_file(uploaded_file):
                             invoice_seen.add(final_invoice_slice)
                             
                         active_sub_id = None
-                        if active_prefix.startswith(("IN", "TI")):[cite: 2]
-                            active_prefix = None[cite: 2]
+                        if active_prefix.startswith(("IN", "TI")):
+                            active_prefix = None
                     except ValueError:
                         pass
 
