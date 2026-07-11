@@ -10,13 +10,13 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 
-# --- Custom Styling & Theme Configuration ---
+# --- Custom Styling & Theme Configuration (Light Blue Palette) ---
 st.set_page_config(page_title="KIST Document Generator", page_icon="📄", layout="centered")
 
 st.markdown("""
     <style>
-    .reportview-container {
-        background: #f0f8ff;
+    .stApp {
+        background-color: #f4f8fb;
     }
     .stButton>button {
         background-color: #4682B4;
@@ -34,11 +34,11 @@ st.markdown("""
         color: #2c5d88;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    div[data-testid="stForm"] {
-        border: 2px solid #b0c4de;
+    div[data-testid="stFileUploader"] {
+        border: 2px dashed #b0c4de;
         padding: 20px;
         border-radius: 10px;
-        background-color: #f4f8fb;
+        background-color: #ffffff;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -355,42 +355,26 @@ def parse_pdf_file(uploaded_file):
                 
     return invoices, grand_total
 
-# --- Application Security & Controller ---
-if 'auth' not in st.session_state:
-    st.session_state['auth'] = False
+# --- Main App Execution Interface ---
+st.title("📄 KIST Sheet Custom Generation Engine")
+st.write("Upload the picklist PDF file below to instantly extract data and generate the structured `.docx` layout.")
 
-if not st.session_state['auth']:
-    st.title("🔑 System Authentication")
-    with st.form("Login Form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Authenticate")
-        if submitted:
-            if username == "admin" and password == "kist123":
-                st.session_state['auth'] = True
-                st.rerun()
-            else:
-                st.error("Invalid credentials configuration.")
-else:
-    st.title("📄 KIST Sheet Custom Generation Engine")
-    st.write("Upload the picklist PDF file below to instantly extract data and generate the structured `.docx` layout.")
+uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
-    uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
+if uploaded_file is not None:
+    invoices, total_amt = parse_pdf_file(uploaded_file)
     
-    if uploaded_file is not None:
-        invoices, total_amt = parse_pdf_file(uploaded_file)
+    if invoices:
+        st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
         
-        if invoices:
-            st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
-            
-            with st.spinner("Compiling structural layout patterns..."):
-                doc_stream = generate_cash_sheet(invoices, total_amt)
-            
-            st.download_button(
-                label="📥 Download Tailored Word Document",
-                data=doc_stream,
-                file_name="KIST_Day_Cash_Sheet.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
-        else:
-            st.error("Could not parse invoices structures. Please verify that the PDF contains the standard table formatting pattern values.")
+        with st.spinner("Compiling structural layout patterns..."):
+            doc_stream = generate_cash_sheet(invoices, total_amt)
+        
+        st.download_button(
+            label="📥 Download Tailored Word Document",
+            data=doc_stream,
+            file_name="KIST_Day_Cash_Sheet.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    else:
+        st.error("Could not parse invoices structures. Please verify that the PDF contains the standard table formatting pattern values.")
