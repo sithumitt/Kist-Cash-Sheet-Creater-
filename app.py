@@ -30,7 +30,7 @@ st.markdown("""
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
     
-    # Check your condition rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
+    # Check the condition rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
     is_large_dataset = len(invoices) > 35
     
     # Margins dynamically adjusted based on the required page budget rule
@@ -39,7 +39,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         buffer, pagesize=A4,
         rightMargin=margin_val, leftMargin=margin_val, topMargin=margin_val, bottomMargin=margin_val
     )
-    story = []
+    body_elements = []
     
     # Text Typography Styles
     styles = getSampleStyleSheet()
@@ -76,8 +76,8 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     )
 
     # ==================== PAGE 1 ====================
-    story.append(Paragraph("KIST DAY CASH SHEET", title_style))
-    story.append(Paragraph("Date : ___________________    Route : ___________________    No.Bill : ___________________", meta_style))
+    body_elements.append(Paragraph("KIST DAY CASH SHEET", title_style))
+    body_elements.append(Paragraph("Date : ___________________    Route : ___________________    No.Bill : ___________________", meta_style))
     
     headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
     table_data = [[Paragraph(h, cell_bold) for h in headers]]
@@ -110,9 +110,9 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     printable_width = 523 if is_large_dataset else 543
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.11,  # Invoice Number
-        printable_width * 0.12,  # Shop Name
-        printable_width * 0.10,  # Amount
+        printable_width * 0.14,  # Expanded Invoice Number space for long tracking IDs
+        printable_width * 0.10,  # Shop Name
+        printable_width * 0.09,  # Amount
         printable_width * 0.05,  # BNW
         printable_width * 0.065, # Cancel
         printable_width * 0.065, # Adjust
@@ -123,7 +123,6 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         printable_width * 0.04   # Rtn
     ]
     
-    # Spacing rules optimized to fit A4 properties depending on dataset volume size
     padding_val = 5.5 if is_large_dataset else 2.5
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
@@ -138,20 +137,20 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), 
     ])
     
-    story.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    story.append(Spacer(1, 10 if is_large_dataset else 6))
+    body_elements.append(Table(table_data, colWidths=col_widths, style=main_table_style))
+    body_elements.append(Spacer(1, 10 if is_large_dataset else 6))
     
     sales_labels = [
         "Biscuits sale : _______________________", "Nectar Sale : _______________________",
         "Water Sale : _______________________", "Total Sale : _______________________"
     ]
     for label in sales_labels:
-        story.append(Paragraph(label, meta_style))
+        body_elements.append(Paragraph(label, meta_style))
         
-    # ==================== LATENT LAYOUT SEGREGATION ====================
-    story.append(PageBreak())
+    # ==================== SEGREGATION BOUNDARY ====================
+    body_elements.append(PageBreak())
     
-    story.append(Paragraph("Cash Receivables", section_style))
+    body_elements.append(Paragraph("Cash Receivables", section_style))
     rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
     rec_data = [[Paragraph(rh, cell_bold) for rh in rec_headers]]
     for r_idx in range(1, 11):
@@ -172,19 +171,17 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         ('TOPPADDING', (0,0), (-1,-1), rec_padding),
         ('BOTTOMPADDING', (0,0), (-1,-1), rec_padding),
     ])
-    story.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
-    story.append(Spacer(1, 8 if is_large_dataset else 5))
+    body_elements.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
+    body_elements.append(Spacer(1, 8 if is_large_dataset else 5))
     
-    story.append(Paragraph("Cash Sheet Balancing", section_style))
+    body_elements.append(Paragraph("Cash Sheet Balancing", section_style))
     
-    # Left Block Metrics Array configuration
     left_rows = [
         ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
         ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
         ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
     ]
     
-    # Right Block Metrics Array configuration
     right_rows_data = [
         ("Cash Balance", ""),
         ("Total Day Cash", ""),
@@ -193,8 +190,6 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         ("Banked Value.", "")
     ]
 
-    # IF data is large (>35), allow the tables to sit side-by-side (takes more space, pushes smoothly to page 3)
-    # ELSE data is small (<=35), vertically stack balancing rows into a single table to guarantee a 2-page fit
     if is_large_dataset:
         left_table_data = []
         left_style_actions = []
@@ -234,13 +229,10 @@ def generate_cash_sheet_pdf(invoices, total_amount):
             ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
             ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
         ]))
-        story.append(master_balancing_table)
+        body_elements.append(master_balancing_table)
     else:
-        # Dynamic Single Column Vertical Compact Stack to fit space safely within 2 pages
         bal_table_data = []
         bal_style_actions = []
-        
-        # Combine structural definitions
         combined_rows = []
         for item, val in left_rows:
             combined_rows.append((item, val, "Balance" in item or item == "System Sale", False))
@@ -270,11 +262,11 @@ def generate_cash_sheet_pdf(invoices, total_amount):
             ('TOPPADDING', (0,0), (-1,-1), 2.5),
             ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
         ] + bal_style_actions))
-        story.append(bal_table)
+        body_elements.append(bal_table)
 
-    story.append(Spacer(1, 8 if is_large_dataset else 5))
+    body_elements.append(Spacer(1, 8 if is_large_dataset else 5))
     
-    story.append(Paragraph("Calculating cash", section_style))
+    body_elements.append(Paragraph("Calculating cash", section_style))
     denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
     denom_data = [denom_headers]
     denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
@@ -290,16 +282,16 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         ('TOPPADDING', (0,0), (-1,-1), denom_padding), ('BOTTOMPADDING', (0,0), (-1,-1), denom_padding),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
     ]))
-    story.append(denom_table)
-    story.append(Spacer(1, 10 if is_large_dataset else 6))
+    body_elements.append(denom_table)
+    body_elements.append(Spacer(1, 10 if is_large_dataset else 6))
     
-    story.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
+    body_elements.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
     
-    doc.build(story)
+    doc.build(body_elements)
     buffer.seek(0)
     return buffer
 
-# --- Native pdfplumber Raw Text Extraction Engine ---
+# --- Universal Multi-Format Raw Text Extraction Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
@@ -308,25 +300,45 @@ def parse_pdf_file(uploaded_file):
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
             text_content = page.extract_text()
-            if text_content: full_text += text_content + "\n"
+            if text_content: 
+                full_text += text_content + "\n"
 
-    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
-    if not invoice_section: return [], 0.0
+    # Extract the block located downstream from 'Net Amt (LKR)' marker phrase[cite: 2]
+    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)[cite: 2]
+    if not invoice_section: 
+        return [], 0.0
 
-    invoice_block_text = invoice_section.group(1)
-    matches = re.finditer(r'\b(TI\d{6})\b.*?([\d,]+\.\d{2})', invoice_block_text, re.DOTALL)
+    invoice_block_text = invoice_section.group(1)[cite: 2]
+    
+    # Flexible row processing strategy: works with pipe layout variations or raw multiline sequences
+    lines = invoice_block_text.split('\n')
+    current_invoice_code = None
+    
+    for line in lines:
+        # Clean background noise components
+        if "Total" in line and not invoices:
+            continue[cite: 2]
+            
+        # 1. Flexible Multi-Format Invoice Number Extraction Logic
+        # Matches classic (TI009403) OR long system composite codes like (26JUL_1201_17300100009)[cite: 2]
+        inv_match = re.search(r'\b(TI\d{5,7})\b|\b(\d{{2}}[A-Z]{{3}}[_\s\w\d]+?)\b', line)
+        if inv_match:
+            current_invoice_code = (inv_match.group(1) or inv_match.group(2)).strip()
+            
+        # 2. Extract final currency line balance values mapping cleanly to the active sequence block
+        amt_match = re.search(r'([\d,]+\.\d{2})\s*$', line)
+        if amt_match and current_invoice_code:
+            amt_val = float(amt_match.group(1).replace(',', ''))
+            
+            # De-duplicate entries cleanly 
+            if not any(i['invoice'] == current_invoice_code for i in invoices):
+                invoices.append({'invoice': current_invoice_code, 'amount': amt_val})
+            current_invoice_code = None
 
-    seen_invoices = set()
-    for match in matches:
-        inv_code = match.group(1).strip()
-        amt_val = float(match.group(2).replace(',', ''))
-        if inv_code not in seen_invoices:
-            invoices.append({'invoice': inv_code, 'amount': amt_val})
-            seen_invoices.add(inv_code)
-
-    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
+    # Calculate system sale value summation anchor
+    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)[cite: 2]
     if total_match:
-        grand_total = float(total_match.group(1).replace(',', ''))
+        grand_total = float(total_match.group(1).replace(',', ''))[cite: 2]
     elif invoices:
         grand_total = sum(i['amount'] for i in invoices)
 
@@ -352,7 +364,7 @@ if uploaded_file is not None:
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
 
-        with st.spinner("Compiling dynamic structure format layout..."):
+        with st.spinner("Compiling structural printable layout..."):
             pdf_data = generate_cash_sheet_pdf(invoices, total_amt)
 
         st.download_button(
@@ -362,4 +374,4 @@ if uploaded_file is not None:
             mime="application/pdf"
         )
     else:
-        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
+        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")[cite: 2]
