@@ -1,10 +1,12 @@
 import io
 import re
 import streamlit as st
+import docx
+from pypdf import PdfReader
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
+from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 
@@ -100,10 +102,6 @@ def generate_cash_sheet(invoices, total_amount):
     # Columns definitions
     headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
     
-    # Calculate rows count
-    data_rows_count = len(invoices)
-    total_table_rows = data_rows_count + 1 + 5  # data rows + 'ST' row + 5 extra blank rows
-
     table = doc.add_table(rows=1, cols=12)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(table)
@@ -119,7 +117,7 @@ def generate_cash_sheet(invoices, total_amount):
         for r in p.runs:
             r.font.bold = True
             r.font.size = Pt(9)
-            r.font.color.rgb = docx.shared.RGBColor(255, 255, 255) if 'docx' in globals() else None
+            r.font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     # Populate Data Rows
     idx = 1
@@ -207,7 +205,7 @@ def generate_cash_sheet(invoices, total_amount):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if p.runs: 
             p.runs[0].font.bold = True
-            p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255) if 'docx' in globals() else None
+            p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     for r_idx in range(1, 11):
         row_cells = rec_table.add_row().cells
@@ -221,7 +219,7 @@ def generate_cash_sheet(invoices, total_amount):
         for i, w in enumerate(rec_widths):
             row.cells[i].width = w
 
-    # Section: Cash Sheet Balancing Side-by-Side Setup via Master Container
+    # Section: Cash Sheet Balancing
     p_bal = doc.add_paragraph()
     p_bal.paragraph_format.space_before = Pt(18)
     run_bal = p_bal.add_run("Cash Sheet Balancing")
@@ -269,7 +267,7 @@ def generate_cash_sheet(invoices, total_amount):
     set_cell_background(hdr_r[0], "5C93C4")
     set_cell_background(hdr_r[1], "5C93C4")
     hdr_r[0].paragraphs[0].runs[0].font.bold = True
-    hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255) if 'docx' in globals() else None
+    hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     right_rows = [("Total Day Cash", False), ("Total Credit Received", False), ("Total Expenses", True), ("Banked Value.", False)]
     for item, is_expense in right_rows:
@@ -302,7 +300,7 @@ def generate_cash_sheet(invoices, total_amount):
         p = cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.runs[0].font.bold = True
-        p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255) if 'docx' in globals() else None
+        p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
     for denom in denominations:
@@ -328,13 +326,18 @@ def generate_cash_sheet(invoices, total_amount):
     target_stream.seek(0)
     return target_stream
 
-# --- Text Parsing Engine ---
-def parse_uploaded_file(file_content):
-    lines = file_content.split('\n')
+# --- PDF Extractor Engine ---
+def parse_pdf_file(uploaded_file):
+    reader = PdfReader(uploaded_file)
+    full_text = ""
+    for page in reader.pages:
+        full_text += page.extract_text() + "\n"
+        
+    lines = full_text.split('\n')
     invoices = []
     grand_total = 0.0
     
-    # Process invoice list row values matching structured standard patterns
+    # Process rows matching table structures
     invoice_pattern = re.compile(r'^\s*(\d+)\s*\|\s*([A-Za-z0-9]+)\s*\|\s*[A-Za-z0-9]+\s*\|[^\|]+\|\s*[^\|]+\|\s*([\d,]+\.\d{2})')
     total_pattern = re.compile(r'Total\s*\|\s*([\d,]+\.\d{2})')
 
@@ -370,16 +373,15 @@ if not st.session_state['auth']:
                 st.error("Invalid credentials configuration.")
 else:
     st.title("📄 KIST Sheet Custom Generation Engine")
-    st.write("Upload the picklist configuration processing file below to instantly compile the structured `.docx` layout mapping parameters.")
+    st.write("Upload the picklist PDF file below to instantly extract data and generate the structured `.docx` layout.")
 
-    uploaded_file = st.file_uploader("Select input log file", type=["txt"])
+    uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
     
     if uploaded_file is not None:
-        string_data = uploaded_file.getvalue().decode("utf-8")
-        invoices, total_amt = parse_uploaded_file(string_data)
+        invoices, total_amt = parse_pdf_file(uploaded_file)
         
         if invoices:
-            st.success(f"Successfully processed {len(invoices)} invoices records. Identified System Sale Value: LKR {total_amt:,.2f}")
+            st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
             
             with st.spinner("Compiling structural layout patterns..."):
                 doc_stream = generate_cash_sheet(invoices, total_amt)
@@ -391,4 +393,4 @@ else:
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         else:
-            st.error("Could not parse invoices structures. Please verify the context format pattern values.")
+            st.error("Could not parse invoices structures. Please verify that the PDF contains the standard table formatting pattern values.")
