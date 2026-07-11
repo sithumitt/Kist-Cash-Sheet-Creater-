@@ -29,7 +29,7 @@ st.markdown("""
 # --- ReportLab Pure-Python PDF Generation Layout ---
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
-    # Switched to A4 portrait for optimized length to guarantee a strict 2-page layout limit
+    # Optimized printable area layout to guarantee a strict 2-page limit
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
         rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
@@ -94,11 +94,9 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # A4 width is 595. Margin calculations give 535 points of clean dynamic runtime printable span
-    # Expanded space assigned directly to Cash, Credit, Cheque input tracking lines
+    # A4 width is 595. Printable width is 535 points
     col_widths = [22, 58, 64, 54, 30, 35, 35, 30, 62, 62, 62, 21]
     
-    # Expanded padding parameters (TOP/BOTTOM set to 5.5pt for handwriting visibility)
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
@@ -143,53 +141,56 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     
     story.append(Paragraph("Cash Sheet Balancing", section_style))
     
-    # Build System Balancing (Left side metrics block)
-    left_rows = [
-        ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
-        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
-        ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
+    # Combined balancing parameters into a single stacked column structure to fully compress height space 
+    balancing_rows = [
+        ("System Sale", f"{total_amount:,.2f}", False, False),
+        ("FOC", "", False, False),
+        ("Total Cancel", "", False, False),
+        ("Balance (1)", "", True, False),
+        ("Total Discounts", "", False, False),
+        ("Total Adjust", "", False, False),
+        ("Total Return", "", False, False),
+        ("Balance (2)", "", True, False),
+        ("Total Cash", "", False, False),
+        ("Total Credit", "", False, False),
+        ("Total Cheques", "", False, False),
+        ("Balance (3)", "", True, False),
+        ("Cash Balance", "", False, True), # Section Header
+        ("Total Day Cash", "", False, False),
+        ("Total Credit Received", "", False, False),
+        ("Total Expenses", "", False, False),
+        ("Banked Value.", "", False, False)
     ]
-    left_table_data = []
-    left_style_actions = []
-    for r_idx, (item, val) in enumerate(left_rows):
-        is_bal = "Balance" in item or item == "System Sale"
-        p_style = cell_bold if is_bal else cell_left
-        v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica', fontSize=9, leading=11)
-        left_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
-        if "Balance" in item:
-            left_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
+    
+    bal_table_data = []
+    bal_style_actions = []
+    
+    for r_idx, (item, val, is_bal, is_hdr) in enumerate(balancing_rows):
+        if is_hdr:
+            p_style = cell_bold
+            v_style = cell_style
+            bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#ffffff")))
+        elif is_bal or item == "System Sale":
+            p_style = cell_bold
+            v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold', fontSize=9, leading=11)
+            bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
+        else:
+            p_style = cell_left
+            v_style = cell_right
             
-    # Build Cash Balance (Right side tracking block)
-    right_table_data = [
-        [Paragraph("Cash Balance", cell_bold), Paragraph("", cell_style)],
-        [Paragraph("Total Day Cash", cell_left), Paragraph("", cell_style)],
-        [Paragraph("Total Credit Received", cell_left), Paragraph("", cell_style)],
-        [Paragraph("Total Expenses", cell_left), Paragraph("", cell_style)],
-        [Paragraph("Banked Value.", cell_left), Paragraph("", cell_style)]
-    ]
-    
-    # side-by-side composite grid alignment (Left width: 265pt, Right width: 265pt + clear balance spacing)
-    left_table = Table(left_table_data, colWidths=[155, 110])
-    left_table.setStyle(TableStyle([
+        bal_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
+        
+        # Give explicit expansion padding room under the Total Expenses box row context
+        if item == "Total Expenses":
+            bal_style_actions.append(('BOTTOMPADDING', (0, r_idx), (1, r_idx), 28))
+            
+    bal_table = Table(bal_table_data, colWidths=[315, 220])
+    bal_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
-    ] + left_style_actions))
-    
-    right_table = Table(right_table_data, colWidths=[155, 110])
-    right_table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('BACKGROUND', (0,0), (-1,0), colors.white),
-        ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
-        ('BOTTOMPADDING', (0,3), (1,3), 36), # Adjusted vertical window area for clear handwriting notes
-    ]))
-    
-    master_balancing_table = Table([[left_table, right_table]], colWidths=[265, 270])
-    master_balancing_table.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
-        ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-    ]))
-    story.append(master_balancing_table)
+        ('TOPPADDING', (0,0), (-1,-1), 4.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
+    ] + bal_style_actions))
+    story.append(bal_table)
     story.append(Spacer(1, 8))
     
     story.append(Paragraph("Calculating cash", section_style))
