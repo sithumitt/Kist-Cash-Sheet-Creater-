@@ -95,8 +95,8 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     printable_width = 523
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.22,  # Invoice Number space expanded to show full copied raw data strings safely
-        printable_width * 0.07,  # Shop Name
+        printable_width * 0.24,  # Expanded Invoice Number space for long tracking IDs
+        printable_width * 0.05,  # Shop Name
         printable_width * 0.10,  # Amount
         printable_width * 0.04,  # BNW
         printable_width * 0.06,  # Cancel
@@ -135,7 +135,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Straightforward Direct Invoice Extraction Table Parser Engine ---
+# --- Direct Copy Table Parsing Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
@@ -145,38 +145,47 @@ def parse_pdf_file(uploaded_file):
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    if not row or len(row) < 3:
+                    if not row or len(row) < 2:
                         continue
                     
-                    # Clean spacing from rows
-                    cleaned_row = [str(cell).strip() if cell else "" for cell in row]
+                    # Clean all cells in the row from whitespace and newlines
+                    cleaned_row = [str(cell).strip().replace('\n', ' ') if cell else "" for cell in row]
                     
-                    # Identify rows matching invoice line structure based on Net Amt layout[cite: 2]
-                    last_cell = cleaned_row[-1]
-                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
+                    # Find the last non-empty element as the amount cell
+                    non_empty_cells = [c for c in cleaned_row if c]
+                    if not non_empty_cells:
                         continue
                         
-                    # Calculate/Extract grand total signature rows safely[cite: 2]
+                    last_cell = non_empty_cells[-1]
+                    
+                    # Verify if the last cell is a valid float value amount format (e.g. 22,050.00)
+                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
+                        continue
+                    
+                    # Capture grand total lines
                     row_text = " ".join(cleaned_row).lower()
                     if "total" in row_text:
-                        if "grand total" in row_text or cleaned_row[2].lower() == "total":
+                        if "grand total" in row_text or "total" in cleaned_row:
                             try:
                                 grand_total = float(last_cell.replace(',', ''))
                             except ValueError:
                                 pass
                         continue
                     
-                    # Target picklist structure: cell at index 1 is 'Invoice'[cite: 2]
-                    # Direct Strategy: copy exact text block raw string directly into the list layout[cite: 2]
-                    invoice_raw_val = cleaned_row[1].replace('\n', ' ')
-                    
-                    # Validate row content index doesn't represent standard metadata headings
-                    if "invoice" in invoice_raw_val.lower() or not invoice_raw_val:
+                    # Dynamic search: look for the cell containing the long invoice format string
+                    invoice_raw_val = None
+                    for cell in cleaned_row:
+                        if re.search(r'\b\d{2}[A-Z]{3}_\d{4}', cell) or "26JUL" in cell:
+                            invoice_raw_val = cell
+                            break
+                            
+                    # Drop headers or unparsed columns
+                    if not invoice_raw_val or "invoice" in invoice_raw_val.lower():
                         continue
                         
                     try:
                         amt_val = float(last_cell.replace(',', ''))
-                        # De-duplicate entry rows seamlessly
+                        # De-duplicate entries cleanly
                         if not any(i['invoice'] == invoice_raw_val for i in invoices):
                             invoices.append({'invoice': invoice_raw_val, 'amount': amt_val})
                     except ValueError:
