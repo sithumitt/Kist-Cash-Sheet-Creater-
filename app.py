@@ -29,38 +29,38 @@ st.markdown("""
 # --- ReportLab Pure-Python PDF Generation Layout ---
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
-    # Tight margins (0.35 inch / 25 points) to guarantee 2-page fit
+    # Expanded standard margins (0.5 inch / 36 points) to fully utilize A4 space beautifully
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
-        rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25
+        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
     )
     story = []
     
-    # Text Typography Styles
+    # Text Typography Styles - All systematically increased for optimal visual depth
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold',
-        fontSize=14, leading=16, alignment=1, spaceAfter=4, textColor=colors.HexColor("#000000")
+        fontSize=18, leading=22, alignment=1, spaceAfter=8, textColor=colors.HexColor("#000000")
     )
     meta_style = ParagraphStyle(
         'MetaStyle', parent=styles['Normal'], fontName='Helvetica-Bold',
-        fontSize=8.5, leading=10, spaceAfter=8, textColor=colors.HexColor("#000000")
+        fontSize=10, leading=14, spaceAfter=12, textColor=colors.HexColor("#000000")
     )
     section_style = ParagraphStyle(
         'SectionStyle', parent=styles['Heading2'], fontName='Helvetica-Bold',
-        fontSize=11, leading=13, spaceBefore=4, spaceAfter=4, textColor=colors.HexColor("#000000")
+        fontSize=13, leading=16, spaceBefore=8, spaceAfter=8, textColor=colors.HexColor("#000000")
     )
     cell_style = ParagraphStyle(
-        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=1
+        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=1
     )
     cell_bold = ParagraphStyle(
-        'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=8.5, alignment=1
+        'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=1
     )
     cell_left = ParagraphStyle(
-        'CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=0
+        'CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=0
     )
     cell_right = ParagraphStyle(
-        'CellRight', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=2
+        'CellRight', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=2
     )
 
     # ==================== PAGE 1 ====================
@@ -94,26 +94,26 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Column measurements tuning - Invoice/Shop contracted; Cash/Credit/Cheque expanded
-    # Total printable width is 562 points (Letter width 612 - 50 margins)
-    col_widths = [20, 50, 60, 55, 30, 36, 36, 30, 65, 65, 65, 50]
+    # Total printable width is 540 points (Letter width 612 - 72 margins)
+    # Scaled to maintain proportional narrow tracking columns and wider entry columns
+    col_widths = [22, 58, 65, 55, 30, 36, 36, 30, 62, 62, 62, 22]
     
-    # Ultra-compressed padding settings (TOP/BOTTOM padding to 2pt maps precisely to digit heights)
+    # Relaxed padding parameters (TOP/BOTTOM set to 6 points to give writing comfort)
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 2),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), # highlight ST row
     ])
     
     story.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 12))
     
     sales_labels = [
         "Biscuits sale : _______________________", "Nectar Sale : _______________________",
@@ -131,15 +131,15 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for r_idx in range(1, 11):
         rec_data.append([Paragraph(str(r_idx), cell_style)] + [Paragraph("", cell_style) for _ in range(5)])
         
-    rec_widths = [30, 80, 202, 85, 85, 80] # Total 562
+    rec_widths = [30, 75, 195, 80, 80, 80] # Total 540
     rec_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 2),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
     ])
     story.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 10))
     
     story.append(Paragraph("Cash Sheet Balancing", section_style))
     
@@ -154,7 +154,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for r_idx, (item, val) in enumerate(left_rows):
         is_bal = "Balance" in item or item == "System Sale"
         p_style = cell_bold if is_bal else cell_left
-        v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica')
+        v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica', fontSize=9, leading=11)
         left_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
         if "Balance" in item:
             left_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
@@ -168,29 +168,29 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         [Paragraph("Banked Value.", cell_left), Paragraph("", cell_style)]
     ]
     
-    # side-by-side composite grid alignment (Left width: 275pt, Right width: 275pt + 12pt clear spacer span)
-    left_table = Table(left_table_data, colWidths=[165, 110])
+    # side-by-side composite grid alignment (Left width: 265pt, Right width: 265pt + 10pt buffer margin)
+    left_table = Table(left_table_data, colWidths=[155, 110])
     left_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
     ] + left_style_actions))
     
-    right_table = Table(right_table_data, colWidths=[165, 110])
+    right_table = Table(right_table_data, colWidths=[155, 110])
     right_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('BACKGROUND', (0,0), (-1,0), colors.white),
-        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
-        ('BOTTOMPADDING', (0,3), (1,3), 32), # Height spacer specifically configured for Manual Expense Line
+        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,3), (1,3), 45), # Open visual window area for expense tracking details
     ]))
     
-    master_balancing_table = Table([[left_table, right_table]], colWidths=[278, 284])
+    master_balancing_table = Table([[left_table, right_table]], colWidths=[268, 272])
     master_balancing_table.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
         ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(master_balancing_table)
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 10))
     
     story.append(Paragraph("Calculating cash", section_style))
     denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
@@ -200,15 +200,15 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         p_style = cell_bold if denom == "Total" else cell_style
         denom_data.append([Paragraph(denom, p_style), Paragraph("", cell_style)])
         
-    denom_table = Table(denom_data, colWidths=[281, 281])
+    denom_table = Table(denom_data, colWidths=[270, 270])
     denom_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
     ]))
     story.append(denom_table)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 14))
     
     story.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
     
@@ -250,7 +250,6 @@ def parse_pdf_file(uploaded_file):
     return invoices, grand_total
 
 # --- Main App Interface ---
-# Injects explicit inline styles to force both the title and label text to render completely black
 st.html("""
     <div style="margin-bottom: 1.5rem;">
         <h1 style="color: #000000 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-bottom: 0.5rem; font-size: 2.25rem; font-weight: 700;">
@@ -270,7 +269,7 @@ if uploaded_file is not None:
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
 
-        with st.spinner("Compiling ultra-compact printable document structure..."):
+        with st.spinner("Compiling structural printable layout..."):
             pdf_data = generate_cash_sheet_pdf(invoices, total_amt)
 
         st.download_button(
