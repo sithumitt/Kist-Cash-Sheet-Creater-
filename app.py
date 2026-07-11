@@ -307,48 +307,45 @@ def generate_cash_sheet(invoices, total_amount):
     target_stream.seek(0)
     return target_stream
 
-# --- High-Reliability Fallback Text-Line Parsing Engine ---
-def parse_pdf_file(file_bytes):
+# --- Native pdfplumber Raw Text Extraction Engine ---
+def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
+    full_text = ""
     
-    # Extract structural text strings page by page directly
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        full_text = ""
+    # 1. Exactly mirror your reference method to safely load pages & extract texts
+    with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
-            full_text += page.extract_text() + "\n"
+            text_content = page.extract_text()
+            if text_content:
+                full_text += text_content + "\n"
 
-    lines = full_text.split("\n")
-    
-    # Targets lines structured around text boundaries: e.g. 1 | T1009403 | CC03000835 ...
-    row_pattern = re.compile(r'^\s*(\d+)\s*\|\s*(T[I1]\d{6})\s*\|.*?\|\s*([\d,]+\.\d{2})\s*$')
-    total_pattern = re.compile(r'Total\s*\|\s*([\d,]+\.\d{2})')
-
-    for line in lines:
-        cleaned = line.strip()
+    # 2. Extract only the invoice details block located below 'Net Amt (LKR)'
+    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
+    if not invoice_section:
+        return [], 0.0
         
-        # Look for Invoice Table Data rows
-        match = row_pattern.match(cleaned)
-        if match:
-            inv_number = match.group(2).strip()
-            amount_str = match.group(3).replace(',', '')
-            try:
-                invoices.append({'invoice': inv_number, 'amount': float(amount_str)})
-            except ValueError:
-                pass
-            continue
-            
-        # Look for Total Row
-        if "Total" in cleaned:
-            tot_match = total_pattern.search(cleaned)
-            if tot_match:
-                try:
-                    grand_total = float(tot_match.group(1).replace(',', ''))
-                except ValueError:
-                    pass
+    invoice_block_text = invoice_section.group(1)
+    
+    # 3. Use an expression designed to pull invoice codes and trailing currency blocks 
+    # even if line wrappers or dynamic spacing breaks up the row structures.
+    matches = re.finditer(r'([TTI1]{2}\d{5})\b.*?(?:\|\s*)?([\d,]+\.\d{2})\b', invoice_block_text, re.DOTALL)
+    
+    seen_invoices = set()
+    for match in matches:
+        inv_code = match.group(1).strip().replace("I", "1") # Correct common OCR string mistakes
+        amt_val = float(match.group(2).replace(',', ''))
+        
+        # Guard against reading product rows or cross-page duplicated values
+        if inv_code not in seen_invoices:
+            invoices.append({'invoice': inv_code, 'amount': amt_val})
+            seen_invoices.add(inv_code)
 
-    # Safe verification backup summary mapping
-    if grand_total == 0.0 and invoices:
+    # 4. Grab the Grand Total configuration line value
+    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
+    if total_match:
+        grand_total = float(total_match.group(1).replace(',', ''))
+    elif invoices:
         grand_total = sum(i['amount'] for i in invoices)
         
     return invoices, grand_total
@@ -360,8 +357,7 @@ st.write("Upload the picklist PDF file below to instantly extract data and gener
 uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
 if uploaded_file is not None:
-    file_bytes = uploaded_file.read()
-    invoices, total_amt = parse_pdf_file(file_bytes)
+    invoices, total_amt = parse_pdf_file(uploaded_file)
     
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
@@ -376,4 +372,4 @@ if uploaded_file is not None:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     else:
-        st.error("Could not parse invoices structures. Please verify that the PDF contains valid text invoice lines.")
+        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
