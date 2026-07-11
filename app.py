@@ -75,7 +75,7 @@ def set_table_borders(table):
 # --- Document Generation Function ---
 def generate_cash_sheet(invoices, total_amount):
     doc = Document()
-    
+
     # Page setup
     for section in doc.sections:
         section.top_margin = Inches(0.6)
@@ -96,11 +96,11 @@ def generate_cash_sheet(invoices, total_amount):
     meta_p.add_run("Date : ___________________    Route : ___________________    No.Bill : ___________________").font.name = 'Arial'
 
     headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
-    
+
     table = doc.add_table(rows=1, cols=12)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(table)
-    
+
     hdr_cells = table.rows[0].cells
     for i, heading_text in enumerate(headers):
         hdr_cells[i].text = heading_text
@@ -118,13 +118,14 @@ def generate_cash_sheet(invoices, total_amount):
         row_cells = table.add_row().cells
         row_cells[0].text = str(idx)
         row_cells[1].text = str(item['invoice'])
-        row_cells[2].text = "" 
+        row_cells[2].text = ""
         row_cells[3].text = f"{item['amount']:.2f}"
-        
+
         for c_idx, cell in enumerate(row_cells):
             set_cell_margins(cell, top=80, bottom=80)
             p = cell.paragraphs[0]
-            p.runs[0].font.size = Pt(9.5)
+            if p.runs:
+                p.runs[0].font.size = Pt(9.5)
             if c_idx in [0, 1]:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif c_idx == 3:
@@ -136,7 +137,7 @@ def generate_cash_sheet(invoices, total_amount):
     st_cells[1].text = "System Sale"
     st_cells[2].text = ""
     st_cells[3].text = f"{total_amount:,.2f}"
-    
+
     for c_idx, cell in enumerate(st_cells):
         set_cell_margins(cell, top=80, bottom=80)
         set_cell_background(cell, "EBF2F8")
@@ -173,24 +174,24 @@ def generate_cash_sheet(invoices, total_amount):
 
     # ---------------- PAGE 2 ----------------
     doc.add_page_break()
-    
+
     p2_title = doc.add_paragraph()
     run = p2_title.add_run("Cash Receivables")
     run.font.size = Pt(14)
     run.font.bold = True
-    
+
     rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
     rec_table = doc.add_table(rows=1, cols=6)
     rec_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(rec_table)
-    
+
     hdr_cells = rec_table.rows[0].cells
     for i, h_text in enumerate(rec_headers):
         hdr_cells[i].text = h_text
         set_cell_background(hdr_cells[i], "4682B4")
         p = hdr_cells[i].paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if p.runs: 
+        if p.runs:
             p.runs[0].font.bold = True
             p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
@@ -214,18 +215,18 @@ def generate_cash_sheet(invoices, total_amount):
 
     master_table = doc.add_table(rows=1, cols=2)
     master_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
+
     cell_left = master_table.rows[0].cells[0]
     cell_left.width = Inches(3.8)
     sub_table_left = cell_left.add_table(rows=0, cols=2)
     set_table_borders(sub_table_left)
-    
+
     left_rows = [
         ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
         ("Total Discounts", ""), ("Total Adjust", ""), ("Total Returnt", ""), ("Balance (2)", ""),
         ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
     ]
-    
+
     for item, val in left_rows:
         row_cells = sub_table_left.add_row().cells
         row_cells[0].text = item
@@ -235,7 +236,8 @@ def generate_cash_sheet(invoices, total_amount):
         if "Balance" in item:
             set_cell_background(row_cells[0], "F0F4F8")
             set_cell_background(row_cells[1], "F0F4F8")
-            row_cells[0].paragraphs[0].runs[0].font.bold = True
+            if row_cells[0].paragraphs[0].runs:
+                row_cells[0].paragraphs[0].runs[0].font.bold = True
         row_cells[0].width = Inches(2.3)
         row_cells[1].width = Inches(1.5)
         row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -244,14 +246,15 @@ def generate_cash_sheet(invoices, total_amount):
     cell_right.width = Inches(3.7)
     sub_table_right = cell_right.add_table(rows=1, cols=2)
     set_table_borders(sub_table_right)
-    
+
     hdr_r = sub_table_right.rows[0].cells
     hdr_r[0].text = "Cash Balance"
     hdr_r[1].text = ""
     set_cell_background(hdr_r[0], "5C93C4")
     set_cell_background(hdr_r[1], "5C93C4")
-    hdr_r[0].paragraphs[0].runs[0].font.bold = True
-    hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+    if hdr_r[0].paragraphs[0].runs:
+        hdr_r[0].paragraphs[0].runs[0].font.bold = True
+        hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     right_rows = [("Total Day Cash", False), ("Total Credit Received", False), ("Total Expenses", True), ("Banked Value.", False)]
     for item, is_expense in right_rows:
@@ -273,7 +276,7 @@ def generate_cash_sheet(invoices, total_amount):
     calc_table = doc.add_table(rows=1, cols=2)
     calc_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(calc_table)
-    
+
     hdr_c = calc_table.rows[0].cells
     hdr_c[0].text = "Cash Analitics"
     hdr_c[1].text = "Valuve"
@@ -282,8 +285,9 @@ def generate_cash_sheet(invoices, total_amount):
     for cell in hdr_c:
         p = cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.runs[0].font.bold = True
-        p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+        if p.runs:
+            p.runs[0].font.bold = True
+            p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
 
     denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
     for denom in denominations:
@@ -296,7 +300,8 @@ def generate_cash_sheet(invoices, total_amount):
         if denom == "Total":
             set_cell_background(row_cells[0], "EBF2F8")
             set_cell_background(row_cells[1], "EBF2F8")
-            row_cells[0].paragraphs[0].runs[0].font.bold = True
+            if row_cells[0].paragraphs[0].runs:
+                row_cells[0].paragraphs[0].runs[0].font.bold = True
 
     p_foot = doc.add_paragraph()
     p_foot.paragraph_format.space_before = Pt(16)
@@ -312,8 +317,8 @@ def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
     full_text = ""
-    
-    # 1. Exactly mirror your reference method to safely load pages & extract texts
+
+    # 1. Load pages & extract raw text
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
             text_content = page.extract_text()
@@ -321,33 +326,40 @@ def parse_pdf_file(uploaded_file):
                 full_text += text_content + "\n"
 
     # 2. Extract only the invoice details block located below 'Net Amt (LKR)'
+    #    (this phrase only appears in the second table's header)
     invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
     if not invoice_section:
         return [], 0.0
-        
+
     invoice_block_text = invoice_section.group(1)
-    
-    # 3. Use an expression designed to pull invoice codes and trailing currency blocks 
-    # even if line wrappers or dynamic spacing breaks up the row structures.
-    matches = re.finditer(r'([TTI1]{2}\d{5})\b.*?(?:\|\s*)?([\d,]+\.\d{2})\b', invoice_block_text, re.DOTALL)
-    
+
+    # 3. FIX: invoice numbers in this document are "TI" + 6 digits
+    #    (e.g. TI009403), not 5 digits. The old pattern used \d{5},
+    #    which meant the trailing digit broke the \b boundary check
+    #    and caused EVERY row to silently fail to match.
+    #    We also stopped "correcting" I -> 1, since pdfplumber gives
+    #    clean extracted text (no OCR involved), and that replace was
+    #    corrupting valid invoice numbers (TI009403 -> T1009403).
+    matches = re.finditer(r'\b(TI\d{6})\b.*?([\d,]+\.\d{2})', invoice_block_text, re.DOTALL)
+
     seen_invoices = set()
     for match in matches:
-        inv_code = match.group(1).strip().replace("I", "1") # Correct common OCR string mistakes
+        inv_code = match.group(1).strip()
         amt_val = float(match.group(2).replace(',', ''))
-        
-        # Guard against reading product rows or cross-page duplicated values
+
+        # Guard against duplicated matches
         if inv_code not in seen_invoices:
             invoices.append({'invoice': inv_code, 'amount': amt_val})
             seen_invoices.add(inv_code)
 
-    # 4. Grab the Grand Total configuration line value
+    # 4. Grab the Grand Total line value (the "Total" row at the end
+    #    of the second table)
     total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
     if total_match:
         grand_total = float(total_match.group(1).replace(',', ''))
     elif invoices:
         grand_total = sum(i['amount'] for i in invoices)
-        
+
     return invoices, grand_total
 
 # --- Main App Execution Interface ---
@@ -358,13 +370,13 @@ uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
 if uploaded_file is not None:
     invoices, total_amt = parse_pdf_file(uploaded_file)
-    
+
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
-        
+
         with st.spinner("Compiling structural layout patterns..."):
             doc_stream = generate_cash_sheet(invoices, total_amt)
-        
+
         st.download_button(
             label="📥 Download Tailored Word Document",
             data=doc_stream,
