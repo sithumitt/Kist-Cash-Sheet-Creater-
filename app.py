@@ -34,6 +34,10 @@ st.markdown("""
         color: #2c5d88;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
+    .black-text {
+        color: #000000 !important;
+        font-weight: normal;
+    }
     div[data-testid="stFileUploader"] {
         border: 2px dashed #b0c4de;
         padding: 20px;
@@ -44,7 +48,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Helper functions for Word Table Styling ---
-def set_cell_margins(cell, top=100, bottom=100, left=150, right=150):
+def set_cell_margins(cell, top=40, bottom=40, left=100, right=100):
+    """Reduced padding parameters to optimize row heights and keep page counts minimal"""
     tcPr = cell._tc.get_or_add_tcPr()
     tcMar = OxmlElement('w:tcMar')
     for m, val in [('w:top', top), ('w:bottom', bottom), ('w:left', left), ('w:right', right)]:
@@ -76,23 +81,25 @@ def set_table_borders(table):
 def generate_cash_sheet(invoices, total_amount):
     doc = Document()
 
-    # Page setup
+    # Compressed Margins for maximizing page utilization
     for section in doc.sections:
-        section.top_margin = Inches(0.6)
-        section.bottom_margin = Inches(0.6)
-        section.left_margin = Inches(0.5)
-        section.right_margin = Inches(0.5)
+        section.top_margin = Inches(0.4)
+        section.bottom_margin = Inches(0.4)
+        section.left_margin = Inches(0.4)
+        section.right_margin = Inches(0.4)
 
     # ---------------- PAGE 1 ----------------
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title.paragraph_format.space_before = Pt(0)
+    title.paragraph_format.space_after = Pt(4)
     run = title.add_run("KIST DAY CASH SHEET")
-    run.font.size = Pt(18)
+    run.font.size = Pt(16)
     run.font.bold = True
     run.font.name = 'Arial'
 
     meta_p = doc.add_paragraph()
-    meta_p.paragraph_format.space_after = Pt(12)
+    meta_p.paragraph_format.space_after = Pt(6)
     meta_p.add_run("Date : ___________________    Route : ___________________    No.Bill : ___________________").font.name = 'Arial'
 
     headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
@@ -104,14 +111,14 @@ def generate_cash_sheet(invoices, total_amount):
     hdr_cells = table.rows[0].cells
     for i, heading_text in enumerate(headers):
         hdr_cells[i].text = heading_text
-        set_cell_background(hdr_cells[i], "4682B4")
-        set_cell_margins(hdr_cells[i], top=120, bottom=120)
+        set_cell_background(hdr_cells[i], "FFFFFF")  # Normal white background
+        set_cell_margins(hdr_cells[i], top=60, bottom=60)
         p = hdr_cells[i].paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for r in p.runs:
-            r.font.bold = True
-            r.font.size = Pt(9)
-            r.font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+            r.font.bold = True                        # Black and bold fonts
+            r.font.size = Pt(8.5)
+            r.font.color.rgb = docx.shared.RGBColor(0, 0, 0)
 
     idx = 1
     for item in invoices:
@@ -122,10 +129,10 @@ def generate_cash_sheet(invoices, total_amount):
         row_cells[3].text = f"{item['amount']:.2f}"
 
         for c_idx, cell in enumerate(row_cells):
-            set_cell_margins(cell, top=80, bottom=80)
+            set_cell_margins(cell, top=40, bottom=40) # Reduced row padding
             p = cell.paragraphs[0]
             if p.runs:
-                p.runs[0].font.size = Pt(9.5)
+                p.runs[0].font.size = Pt(8.5)
             if c_idx in [0, 1]:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif c_idx == 3:
@@ -139,12 +146,12 @@ def generate_cash_sheet(invoices, total_amount):
     st_cells[3].text = f"{total_amount:,.2f}"
 
     for c_idx, cell in enumerate(st_cells):
-        set_cell_margins(cell, top=80, bottom=80)
+        set_cell_margins(cell, top=40, bottom=40)
         set_cell_background(cell, "EBF2F8")
         p = cell.paragraphs[0]
         if p.runs:
             p.runs[0].font.bold = True
-            p.runs[0].font.size = Pt(9.5)
+            p.runs[0].font.size = Pt(8.5)
         if c_idx in [0, 1]:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif c_idx == 3:
@@ -154,10 +161,10 @@ def generate_cash_sheet(invoices, total_amount):
         extra_cells = table.add_row().cells
         extra_cells[0].text = str(idx)
         for c_idx, cell in enumerate(extra_cells):
-            set_cell_margins(cell, top=140, bottom=140)
+            set_cell_margins(cell, top=80, bottom=80)
             cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER if c_idx == 0 else WD_ALIGN_PARAGRAPH.LEFT
             if cell.paragraphs[0].runs:
-                cell.paragraphs[0].runs[0].font.size = Pt(9.5)
+                cell.paragraphs[0].runs[0].font.size = Pt(8.5)
         idx += 1
 
     col_widths = [Inches(0.35), Inches(1.1), Inches(1.6), Inches(0.9), Inches(0.35), Inches(0.45), Inches(0.5), Inches(0.45), Inches(0.5), Inches(0.5), Inches(0.5), Inches(0.4)]
@@ -165,19 +172,24 @@ def generate_cash_sheet(invoices, total_amount):
         for i, width in enumerate(col_widths):
             row.cells[i].width = width
 
-    doc.add_paragraph().paragraph_format.space_before = Pt(12)
+    p_spacer = doc.add_paragraph()
+    p_spacer.paragraph_format.space_before = Pt(6)
+    p_spacer.paragraph_format.space_after = Pt(0)
+    
     sales_labels = ["Biscuits sale : _______________________", "Nectar Sale : _______________________", "Water Sale : _______________________", "Total Sale : _______________________"]
     for label in sales_labels:
         p = doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.space_after = Pt(2)
         p.add_run(label).font.name = 'Arial'
 
     # ---------------- PAGE 2 ----------------
     doc.add_page_break()
 
     p2_title = doc.add_paragraph()
+    p2_title.paragraph_format.space_before = Pt(0)
+    p2_title.paragraph_format.space_after = Pt(4)
     run = p2_title.add_run("Cash Receivables")
-    run.font.size = Pt(14)
+    run.font.size = Pt(12)
     run.font.bold = True
 
     rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
@@ -188,19 +200,23 @@ def generate_cash_sheet(invoices, total_amount):
     hdr_cells = rec_table.rows[0].cells
     for i, h_text in enumerate(rec_headers):
         hdr_cells[i].text = h_text
-        set_cell_background(hdr_cells[i], "4682B4")
+        set_cell_background(hdr_cells[i], "FFFFFF")  # Normal white background
+        set_cell_margins(hdr_cells[i], top=60, bottom=60)
         p = hdr_cells[i].paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if p.runs:
-            p.runs[0].font.bold = True
-            p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+            p.runs[0].font.bold = True                # Black and bold fonts
+            p.runs[0].font.color.rgb = docx.shared.RGBColor(0, 0, 0)
+            p.runs[0].font.size = Pt(8.5)
 
     for r_idx in range(1, 11):
         row_cells = rec_table.add_row().cells
         row_cells[0].text = str(r_idx)
         row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         for cell in row_cells:
-            set_cell_margins(cell, top=120, bottom=120)
+            set_cell_margins(cell, top=40, bottom=40)
+            if cell.paragraphs[0].runs:
+                cell.paragraphs[0].runs[0].font.size = Pt(8.5)
 
     rec_widths = [Inches(0.4), Inches(1.2), Inches(2.2), Inches(1.2), Inches(1.2), Inches(1.3)]
     for row in rec_table.rows:
@@ -208,9 +224,10 @@ def generate_cash_sheet(invoices, total_amount):
             row.cells[i].width = w
 
     p_bal = doc.add_paragraph()
-    p_bal.paragraph_format.space_before = Pt(18)
+    p_bal.paragraph_format.space_before = Pt(8)
+    p_bal.paragraph_format.space_after = Pt(4)
     run_bal = p_bal.add_run("Cash Sheet Balancing")
-    run_bal.font.size = Pt(14)
+    run_bal.font.size = Pt(12)
     run_bal.font.bold = True
 
     master_table = doc.add_table(rows=1, cols=2)
@@ -221,9 +238,10 @@ def generate_cash_sheet(invoices, total_amount):
     sub_table_left = cell_left.add_table(rows=0, cols=2)
     set_table_borders(sub_table_left)
 
+    # Corrected "Total Returnt" to "Total Return"
     left_rows = [
         ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
-        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Returnt", ""), ("Balance (2)", ""),
+        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
         ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
     ]
 
@@ -231,16 +249,22 @@ def generate_cash_sheet(invoices, total_amount):
         row_cells = sub_table_left.add_row().cells
         row_cells[0].text = item
         row_cells[1].text = val
-        set_cell_margins(row_cells[0], top=80, bottom=80)
-        set_cell_margins(row_cells[1], top=80, bottom=80)
+        set_cell_margins(row_cells[0], top=40, bottom=40)
+        set_cell_margins(row_cells[1], top=40, bottom=40)
+        
+        p0 = row_cells[0].paragraphs[0]
+        p1 = row_cells[1].paragraphs[0]
+        if p0.runs: p0.runs[0].font.size = Pt(8.5)
+        if p1.runs: p1.runs[0].font.size = Pt(8.5)
+
         if "Balance" in item:
             set_cell_background(row_cells[0], "F0F4F8")
             set_cell_background(row_cells[1], "F0F4F8")
-            if row_cells[0].paragraphs[0].runs:
-                row_cells[0].paragraphs[0].runs[0].font.bold = True
+            if p0.runs:
+                p0.runs[0].font.bold = True
         row_cells[0].width = Inches(2.3)
         row_cells[1].width = Inches(1.5)
-        row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     cell_right = master_table.rows[0].cells[1]
     cell_right.width = Inches(3.7)
@@ -250,27 +274,33 @@ def generate_cash_sheet(invoices, total_amount):
     hdr_r = sub_table_right.rows[0].cells
     hdr_r[0].text = "Cash Balance"
     hdr_r[1].text = ""
-    set_cell_background(hdr_r[0], "5C93C4")
-    set_cell_background(hdr_r[1], "5C93C4")
+    set_cell_background(hdr_r[0], "FFFFFF")  # Normal white background
+    set_cell_background(hdr_r[1], "FFFFFF")
+    set_cell_margins(hdr_r[0], top=40, bottom=40)
+    set_cell_margins(hdr_r[1], top=40, bottom=40)
     if hdr_r[0].paragraphs[0].runs:
         hdr_r[0].paragraphs[0].runs[0].font.bold = True
-        hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+        hdr_r[0].paragraphs[0].runs[0].font.color.rgb = docx.shared.RGBColor(0, 0, 0) # Black Font
+        hdr_r[0].paragraphs[0].runs[0].font.size = Pt(8.5)
 
     right_rows = [("Total Day Cash", False), ("Total Credit Received", False), ("Total Expenses", True), ("Banked Value.", False)]
     for item, is_expense in right_rows:
         row_cells = sub_table_right.add_row().cells
         row_cells[0].text = item
-        set_cell_margins(row_cells[0], top=80, bottom=80)
-        set_cell_margins(row_cells[1], top=80, bottom=80)
+        set_cell_margins(row_cells[0], top=40, bottom=40)
+        set_cell_margins(row_cells[1], top=40, bottom=40)
+        
+        if row_cells[0].paragraphs[0].runs: row_cells[0].paragraphs[0].runs[0].font.size = Pt(8.5)
         row_cells[0].width = Inches(2.2)
         row_cells[1].width = Inches(1.5)
         if is_expense:
-            set_cell_margins(row_cells[0], top=80, bottom=400)
+            set_cell_margins(row_cells[0], top=40, bottom=240)  # Tighter layout sizing
 
     p_calc = doc.add_paragraph()
-    p_calc.paragraph_format.space_before = Pt(18)
+    p_calc.paragraph_format.space_before = Pt(8)
+    p_calc.paragraph_format.space_after = Pt(4)
     run_calc = p_calc.add_run("Calculating cash")
-    run_calc.font.size = Pt(14)
+    run_calc.font.size = Pt(12)
     run_calc.font.bold = True
 
     calc_table = doc.add_table(rows=1, cols=2)
@@ -280,32 +310,42 @@ def generate_cash_sheet(invoices, total_amount):
     hdr_c = calc_table.rows[0].cells
     hdr_c[0].text = "Cash Analitics"
     hdr_c[1].text = "Valuve"
-    set_cell_background(hdr_c[0], "4682B4")
-    set_cell_background(hdr_c[1], "4682B4")
+    set_cell_background(hdr_c[0], "FFFFFF")  # Normal white background
+    set_cell_background(hdr_c[1], "FFFFFF")
     for cell in hdr_c:
+        set_cell_margins(cell, top=60, bottom=60)
         p = cell.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if p.runs:
-            p.runs[0].font.bold = True
-            p.runs[0].font.color.rgb = docx.shared.RGBColor(255, 255, 255)
+            p.runs[0].font.bold = True                # Black and bold fonts
+            p.runs[0].font.color.rgb = docx.shared.RGBColor(0, 0, 0)
+            p.runs[0].font.size = Pt(8.5)
 
     denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
     for denom in denominations:
         row_cells = calc_table.add_row().cells
         row_cells[0].text = denom
-        set_cell_margins(row_cells[0], top=80, bottom=80)
-        set_cell_margins(row_cells[1], top=80, bottom=80)
+        set_cell_margins(row_cells[0], top=40, bottom=40)
+        set_cell_margins(row_cells[1], top=40, bottom=40)
+        
+        p0 = row_cells[0].paragraphs[0]
+        p1 = row_cells[1].paragraphs[0]
+        if p0.runs: p0.runs[0].font.size = Pt(8.5)
+        if p1.runs: p1.runs[0].font.size = Pt(8.5)
+        
         row_cells[0].width = Inches(3.75)
         row_cells[1].width = Inches(3.75)
         if denom == "Total":
             set_cell_background(row_cells[0], "EBF2F8")
             set_cell_background(row_cells[1], "EBF2F8")
-            if row_cells[0].paragraphs[0].runs:
-                row_cells[0].paragraphs[0].runs[0].font.bold = True
+            if p0.runs:
+                p0.runs[0].font.bold = True
 
     p_foot = doc.add_paragraph()
-    p_foot.paragraph_format.space_before = Pt(16)
+    p_foot.paragraph_format.space_before = Pt(8)
     p_foot.add_run("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________").font.name = 'Arial'
+    if p_foot.runs:
+        p_foot.runs[0].font.size = Pt(9)
 
     target_stream = io.BytesIO()
     doc.save(target_stream)
@@ -318,28 +358,18 @@ def parse_pdf_file(uploaded_file):
     grand_total = 0.0
     full_text = ""
 
-    # 1. Load pages & extract raw text
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
             text_content = page.extract_text()
             if text_content:
                 full_text += text_content + "\n"
 
-    # 2. Extract only the invoice details block located below 'Net Amt (LKR)'
-    #    (this phrase only appears in the second table's header)
     invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
     if not invoice_section:
         return [], 0.0
 
     invoice_block_text = invoice_section.group(1)
 
-    # 3. FIX: invoice numbers in this document are "TI" + 6 digits
-    #    (e.g. TI009403), not 5 digits. The old pattern used \d{5},
-    #    which meant the trailing digit broke the \b boundary check
-    #    and caused EVERY row to silently fail to match.
-    #    We also stopped "correcting" I -> 1, since pdfplumber gives
-    #    clean extracted text (no OCR involved), and that replace was
-    #    corrupting valid invoice numbers (TI009403 -> T1009403).
     matches = re.finditer(r'\b(TI\d{6})\b.*?([\d,]+\.\d{2})', invoice_block_text, re.DOTALL)
 
     seen_invoices = set()
@@ -347,13 +377,10 @@ def parse_pdf_file(uploaded_file):
         inv_code = match.group(1).strip()
         amt_val = float(match.group(2).replace(',', ''))
 
-        # Guard against duplicated matches
         if inv_code not in seen_invoices:
             invoices.append({'invoice': inv_code, 'amount': amt_val})
             seen_invoices.add(inv_code)
 
-    # 4. Grab the Grand Total line value (the "Total" row at the end
-    #    of the second table)
     total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
     if total_match:
         grand_total = float(total_match.group(1).replace(',', ''))
@@ -364,7 +391,9 @@ def parse_pdf_file(uploaded_file):
 
 # --- Main App Execution Interface ---
 st.title("📄 KIST Sheet Custom Generation Engine")
-st.write("Upload the picklist PDF file below to instantly extract data and generate the structured `.docx` layout.")
+
+# Formatted with explicit HTML and a class selector to force a standard black color tone
+st.markdown('<p class="black-text">Upload the picklist PDF file below to instantly extract data and generate the structured layout.</p>', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
