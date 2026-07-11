@@ -30,7 +30,7 @@ st.markdown("""
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
     
-    # Check the condition rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
+    # Rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
     is_large_dataset = len(invoices) > 35
     
     # Margins dynamically adjusted based on the required page budget rule
@@ -291,71 +291,72 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Universal Multi-Format Raw Text Extraction Engine ---
+# --- Universal Line-by-Line Multi-Format Text Extraction Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
-    
+    full_text = ""
+
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
-            tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    # Filter out empty rows or header rows
-                    if not row or len(row) < 3:
-                        continue
-                    
-                    # Clean all cells in the row from whitespace or line breaks
-                    cleaned_row = [str(cell).strip().replace('\n', ' ') if cell else "" for cell in row]
-                    
-                    # Rule: The last cell must be a valid amount formatted as text currency (e.g. 22,050.00)
-                    last_cell = cleaned_row[-1]
-                    if not re.search(r'^\d[\d,]*\.\d{2}$', last_cell):
-                        continue
-                        
-                    # Rule: Skip the summary total rows to prevent duplicating sums
-                    if any("total" in str(c).lower() for c in cleaned_row):
-                        if "grand total" in str(cleaned_row).lower() or "total" in str(cleaned_row).lower():
-                            # Capture the final total sum amount if present
-                            try:
-                                grand_total = float(last_cell.replace(',', ''))
-                            except ValueError:
-                                pass
-                        continue
-                    
-                    # Parse out the invoice code column entries dynamically
-                    invoice_str = ""
-                    for cell in cleaned_row:
-                        # Find strings matching variations of the date/route prefixes or standard numeric blocks
-                        if re.search(r'\b\d{2}[A-Z]{3}\b|\bTI\d{5,7}\b', cell):
-                            invoice_str = cell
-                            break
-                    
-                    # If direct match wasn't hit, fallback to checking cells that contain multiple digits
-                    if not invoice_str:
-                        for cell in cleaned_row:
-                            if re.search(r'\b\d{5,20}\b', cell):
-                                invoice_str = cell
-                                break
-                                
-                    if invoice_str:
-                        # Extract all numbers from the target invoice field string
-                        all_numbers = re.findall(r'\d+', invoice_str)
-                        if all_numbers:
-                            # Standard rule logic: take only the last continuous set of digits as the code
-                            target_code = all_numbers[-1]
-                            # Slice it down strictly to the last 4 digits maximum
-                            final_invoice = target_code[-4:]
-                        else:
-                            final_invoice = "0000"
-                            
-                        try:
-                            amt_val = float(last_cell.replace(',', ''))
-                            # Safeguard against double extraction
-                            if not any(i['invoice'] == final_invoice for i in invoices):
-                                invoices.append({'invoice': final_invoice, 'amount': amt_val})
-                        except ValueError:
-                            pass
+            text_content = page.extract_text()
+            if text_content: 
+                full_text += text_content + "\n"
+
+    # Split invoice content segments following the Net Amt column block layout
+    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
+    if not invoice_section: 
+        return [], 0.0
+
+    invoice_block_text = invoice_section.group(1)
+    lines = invoice_block_text.split('\n')
+    
+    # Pre-compiled regex pattern to capture values at the end of valid ledger rows
+    amount_pattern = re.compile(r'([\d,]+\.\d{2})\s*$')
+    
+    for line in lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+            
+        # Parse the money value at the right end of the active row string
+        amt_match = amount_pattern.search(line_str)
+        if amt_match:
+            amt_text = amt_match.group(1)
+            
+            # Skip overall summary total lines
+            if "total" in line_str.lower():
+                if "grand total" in line_str.lower() or line_str.lower().startswith("total"):
+                    try:
+                        grand_total = float(amt_text.replace(',', ''))
+                    except ValueError:
+                        pass
+                continue
+                
+            # Process out numeric invoice indicators tracking backwards from the currency block
+            # Matches standard 'TI' codes or long numerical sequences anywhere in the row
+            numbers = re.findall(r'\d+', line_str.replace(amt_text, ''))
+            
+            if numbers:
+                # Find the longest consecutive cluster of digits (corresponds to the main invoice sequence number)
+                longest_digits = max(numbers, key=len)
+                
+                # Rule: Apply a safety fallback if noise matches a single index counter digit
+                if len(longest_digits) < 2 and len(numbers) > 1:
+                    # Sort by digit string width tracking sizes downwards
+                    sorted_numbers = sorted(numbers, key=len, reverse=True)
+                    longest_digits = sorted_numbers[0]
+                
+                # Dynamic Rule: Slice and extract strictly the last 4 digits
+                final_invoice = longest_digits[-4:]
+                
+                try:
+                    amt_val = float(amt_text.replace(',', ''))
+                    # Protect data array elements from duplicated value injection rows
+                    if not any(i['invoice'] == final_invoice for i in invoices):
+                        invoices.append({'invoice': final_invoice, 'amount': amt_val})
+                except ValueError:
+                    pass
 
     if invoices and grand_total == 0.0:
         grand_total = sum(i['amount'] for i in invoices)
