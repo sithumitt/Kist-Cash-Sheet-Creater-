@@ -321,7 +321,7 @@ def parse_pdf_file(uploaded_file):
             
         # 1. Flexible Multi-Format Invoice Number Extraction Logic
         # Matches classic (TI009403) OR long system composite codes like (26JUL_1201_17300100009)[cite: 2]
-        inv_match = re.search(r'\b(TI\d{5,7})\b|\b(\d{{2}}[A-Z]{{3}}[_\s\w\d]+?)\b', line)
+        inv_match = re.search(r'\b(TI\d{5,7})\b|\b(\d{2}[A-Z]{3}[_\s\w\d]+?)\b', line)
         if inv_match:
             current_invoice_code = (inv_match.group(1) or inv_match.group(2)).strip()
             
