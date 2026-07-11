@@ -29,38 +29,50 @@ st.markdown("""
 # --- ReportLab Pure-Python PDF Generation Layout ---
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
-    # Optimized printable area layout to guarantee a strict 2-page limit
+    
+    # Check your condition rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
+    is_large_dataset = len(invoices) > 35
+    
+    # Margins dynamically adjusted based on the required page budget rule
+    margin_val = 36 if is_large_dataset else 26
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
-        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
+        rightMargin=margin_val, leftMargin=margin_val, topMargin=margin_val, bottomMargin=margin_val
     )
     story = []
     
-    # Text Typography Styles - Enlarged fonts for high readability
+    # Text Typography Styles
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold',
-        fontSize=18, leading=22, alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
+        fontSize=16 if is_large_dataset else 14, leading=20 if is_large_dataset else 16, 
+        alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
     )
     meta_style = ParagraphStyle(
         'MetaStyle', parent=styles['Normal'], fontName='Helvetica-Bold',
-        fontSize=10, leading=14, spaceAfter=10, textColor=colors.HexColor("#000000")
+        fontSize=9.5 if is_large_dataset else 8.5, leading=13 if is_large_dataset else 10, 
+        spaceAfter=10 if is_large_dataset else 6, textColor=colors.HexColor("#000000")
     )
     section_style = ParagraphStyle(
         'SectionStyle', parent=styles['Heading2'], fontName='Helvetica-Bold',
-        fontSize=13, leading=16, spaceBefore=8, spaceAfter=6, textColor=colors.HexColor("#000000")
+        fontSize=12 if is_large_dataset else 11, leading=15 if is_large_dataset else 13, 
+        spaceBefore=8 if is_large_dataset else 4, spaceAfter=6 if is_large_dataset else 4, textColor=colors.HexColor("#000000")
     )
     cell_style = ParagraphStyle(
-        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=1
+        'CellStyle', parent=styles['Normal'], fontName='Helvetica', 
+        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=1
     )
     cell_bold = ParagraphStyle(
-        'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=1
+        'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', 
+        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=1
     )
     cell_left = ParagraphStyle(
-        'CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=0
+        'CellLeft', parent=styles['Normal'], fontName='Helvetica', 
+        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=0
     )
     cell_right = ParagraphStyle(
-        'CellRight', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=2
+        'CellRight', parent=styles['Normal'], fontName='Helvetica', 
+        fontSize=8.5 if is_large_dataset else 7.5, leading=10.5 if is_large_dataset else 8.5, alignment=2
     )
 
     # ==================== PAGE 1 ====================
@@ -94,24 +106,40 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # A4 width is 595. Printable width is 535 points
-    col_widths = [22, 58, 64, 54, 30, 35, 35, 30, 62, 62, 62, 21]
+    # Printable horizontal width mapping proportions 
+    printable_width = 523 if is_large_dataset else 543
+    col_widths = [
+        printable_width * 0.04,  # No
+        printable_width * 0.11,  # Invoice Number
+        printable_width * 0.12,  # Shop Name
+        printable_width * 0.10,  # Amount
+        printable_width * 0.05,  # BNW
+        printable_width * 0.065, # Cancel
+        printable_width * 0.065, # Adjust
+        printable_width * 0.05,  # Dis
+        printable_width * 0.12,  # Cash
+        printable_width * 0.12,  # Credit
+        printable_width * 0.12,  # Cheque
+        printable_width * 0.04   # Rtn
+    ]
     
+    # Spacing rules optimized to fit A4 properties depending on dataset volume size
+    padding_val = 5.5 if is_large_dataset else 2.5
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 5.5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5.5),
+        ('TOPPADDING', (0,0), (-1,-1), padding_val),
+        ('BOTTOMPADDING', (0,0), (-1,-1), padding_val),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), # highlight ST row
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), 
     ])
     
     story.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 10 if is_large_dataset else 6))
     
     sales_labels = [
         "Biscuits sale : _______________________", "Nectar Sale : _______________________",
@@ -120,7 +148,7 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for label in sales_labels:
         story.append(Paragraph(label, meta_style))
         
-    # ==================== PAGE 2 (STRICT LAYOUT BOUNDARY) ====================
+    # ==================== LATENT LAYOUT SEGREGATION ====================
     story.append(PageBreak())
     
     story.append(Paragraph("Cash Receivables", section_style))
@@ -129,69 +157,122 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for r_idx in range(1, 11):
         rec_data.append([Paragraph(str(r_idx), cell_style)] + [Paragraph("", cell_style) for _ in range(5)])
         
-    rec_widths = [30, 75, 190, 80, 80, 80] # Total 535
+    rec_widths = [
+        printable_width * 0.06,
+        printable_width * 0.14,
+        printable_width * 0.35,
+        printable_width * 0.15,
+        printable_width * 0.15,
+        printable_width * 0.15
+    ]
+    rec_padding = 4.5 if is_large_dataset else 2.5
     rec_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 4.5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
+        ('TOPPADDING', (0,0), (-1,-1), rec_padding),
+        ('BOTTOMPADDING', (0,0), (-1,-1), rec_padding),
     ])
     story.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 8 if is_large_dataset else 5))
     
     story.append(Paragraph("Cash Sheet Balancing", section_style))
     
-    # Combined balancing parameters into a single stacked column structure to fully compress height space 
-    balancing_rows = [
-        ("System Sale", f"{total_amount:,.2f}", False, False),
-        ("FOC", "", False, False),
-        ("Total Cancel", "", False, False),
-        ("Balance (1)", "", True, False),
-        ("Total Discounts", "", False, False),
-        ("Total Adjust", "", False, False),
-        ("Total Return", "", False, False),
-        ("Balance (2)", "", True, False),
-        ("Total Cash", "", False, False),
-        ("Total Credit", "", False, False),
-        ("Total Cheques", "", False, False),
-        ("Balance (3)", "", True, False),
-        ("Cash Balance", "", False, True), # Section Header
-        ("Total Day Cash", "", False, False),
-        ("Total Credit Received", "", False, False),
-        ("Total Expenses", "", False, False),
-        ("Banked Value.", "", False, False)
+    # Left Block Metrics Array configuration
+    left_rows = [
+        ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
+        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
+        ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
     ]
     
-    bal_table_data = []
-    bal_style_actions = []
-    
-    for r_idx, (item, val, is_bal, is_hdr) in enumerate(balancing_rows):
-        if is_hdr:
-            p_style = cell_bold
-            v_style = cell_style
-            bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#ffffff")))
-        elif is_bal or item == "System Sale":
-            p_style = cell_bold
-            v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold', fontSize=9, leading=11)
-            bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
-        else:
-            p_style = cell_left
-            v_style = cell_right
-            
-        bal_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
+    # Right Block Metrics Array configuration
+    right_rows_data = [
+        ("Cash Balance", ""),
+        ("Total Day Cash", ""),
+        ("Total Credit Received", ""),
+        ("Total Expenses", ""),
+        ("Banked Value.", "")
+    ]
+
+    # IF data is large (>35), allow the tables to sit side-by-side (takes more space, pushes smoothly to page 3)
+    # ELSE data is small (<=35), vertically stack balancing rows into a single table to guarantee a 2-page fit
+    if is_large_dataset:
+        left_table_data = []
+        left_style_actions = []
+        for r_idx, (item, val) in enumerate(left_rows):
+            is_bal = "Balance" in item or item == "System Sale"
+            p_style = cell_bold if is_bal else cell_left
+            v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica', fontSize=8.5)
+            left_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
+            if "Balance" in item:
+                left_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
+                
+        right_table_data = []
+        for r_idx, (item, val) in enumerate(right_rows_data):
+            p_style = cell_bold if r_idx == 0 else cell_left
+            right_table_data.append([Paragraph(item, p_style), Paragraph(val, cell_style)])
+
+        w_left = printable_width * 0.49
+        w_right = printable_width * 0.49
         
-        # Give explicit expansion padding room under the Total Expenses box row context
-        if item == "Total Expenses":
-            bal_style_actions.append(('BOTTOMPADDING', (0, r_idx), (1, r_idx), 28))
+        left_table = Table(left_table_data, colWidths=[w_left*0.58, w_left*0.42])
+        left_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+            ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
+        ] + left_style_actions))
+        
+        right_table = Table(right_table_data, colWidths=[w_right*0.58, w_right*0.42])
+        right_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+            ('BACKGROUND', (0,0), (-1,0), colors.white),
+            ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
+            ('BOTTOMPADDING', (0,3), (1,3), 36),
+        ]))
+        
+        master_balancing_table = Table([[left_table, right_table]], colWidths=[printable_width*0.50, printable_width*0.50])
+        master_balancing_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ]))
+        story.append(master_balancing_table)
+    else:
+        # Dynamic Single Column Vertical Compact Stack to fit space safely within 2 pages
+        bal_table_data = []
+        bal_style_actions = []
+        
+        # Combine structural definitions
+        combined_rows = []
+        for item, val in left_rows:
+            combined_rows.append((item, val, "Balance" in item or item == "System Sale", False))
+        for r_idx, (item, val) in enumerate(right_rows_data):
+            combined_rows.append((item, val, False, r_idx == 0))
             
-    bal_table = Table(bal_table_data, colWidths=[315, 220])
-    bal_table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 4.5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
-    ] + bal_style_actions))
-    story.append(bal_table)
-    story.append(Spacer(1, 8))
+        for r_idx, (item, val, is_bal, is_hdr) in enumerate(combined_rows):
+            if is_hdr:
+                p_style = cell_bold
+                v_style = cell_style
+                bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.white))
+            elif is_bal:
+                p_style = cell_bold
+                v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold', fontSize=7.5)
+                bal_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
+            else:
+                p_style = cell_left
+                v_style = cell_right
+                
+            bal_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
+            if item == "Total Expenses":
+                bal_style_actions.append(('BOTTOMPADDING', (0, r_idx), (1, r_idx), 26))
+                
+        bal_table = Table(bal_table_data, colWidths=[printable_width * 0.58, printable_width * 0.42])
+        bal_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+            ('TOPPADDING', (0,0), (-1,-1), 2.5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
+        ] + bal_style_actions))
+        story.append(bal_table)
+
+    story.append(Spacer(1, 8 if is_large_dataset else 5))
     
     story.append(Paragraph("Calculating cash", section_style))
     denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
@@ -201,15 +282,16 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         p_style = cell_bold if denom == "Total" else cell_style
         denom_data.append([Paragraph(denom, p_style), Paragraph("", cell_style)])
         
-    denom_table = Table(denom_data, colWidths=[267, 268])
+    denom_table = Table(denom_data, colWidths=[printable_width*0.50, printable_width*0.50])
+    denom_padding = 3.5 if is_large_dataset else 2.2
     denom_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 3.5), ('BOTTOMPADDING', (0,0), (-1,-1), 3.5),
+        ('TOPPADDING', (0,0), (-1,-1), denom_padding), ('BOTTOMPADDING', (0,0), (-1,-1), denom_padding),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
     ]))
     story.append(denom_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 10 if is_large_dataset else 6))
     
     story.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
     
@@ -270,7 +352,7 @@ if uploaded_file is not None:
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
 
-        with st.spinner("Compiling structural printable layout..."):
+        with st.spinner("Compiling dynamic structure format layout..."):
             pdf_data = generate_cash_sheet_pdf(invoices, total_amt)
 
         st.download_button(
