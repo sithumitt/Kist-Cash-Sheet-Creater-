@@ -95,21 +95,21 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Full horizontal layout width span configurations (Total 523 points)
+    # Proportional width redistribution adjustments targeting printable area (Total 523 points)
     printable_width = 523
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.24,  # Expanded Invoice Number space for long tracking IDs
-        printable_width * 0.05,  # Shop Name
+        printable_width * 0.11,  # Invoice Number space reduced (was 0.24)
+        printable_width * 0.21,  # Shop Name expanded heavily for detailed descriptors (was 0.05)
         printable_width * 0.10,  # Amount
-        printable_width * 0.04,  # BNW
+        printable_width * 0.03,  # BNW column optimized strictly down to size for two digits (was 0.04)
         printable_width * 0.06,  # Cancel
         printable_width * 0.06,  # Adjust
         printable_width * 0.04,  # Dis
         printable_width * 0.11,  # Cash
         printable_width * 0.11,  # Credit
         printable_width * 0.11,  # Cheque
-        printable_width * 0.04   # Rtn
+        printable_width * 0.02   # Rtn
     ]
     
     main_table_style = TableStyle([
@@ -145,17 +145,16 @@ def parse_pdf_file(uploaded_file):
     total_amount = 0.0
     invoice_seen = set()
 
-    # Pattern 1: Catch composite complex prefix dates (e.g. 26JUL_1201_17300100009)
-    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')
-    # Pattern 2: Catch standard prefixes (e.g. IN008868, TI009403)
-    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')
-    # Pattern 3: Catch floating isolated identifier lines (e.g. 368 or 387)
-    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')
+    # Pattern 1: Catch composite complex prefix dates (e.g. 26JUL_1201_17300100009)[cite: 2]
+    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')[cite: 2]
+    # Pattern 2: Catch standard prefixes (e.g. IN008868, TI009403)[cite: 2]
+    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')[cite: 2]
+    # Pattern 3: Catch floating isolated identifier lines (e.g. 368 or 387)[cite: 2]
+    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')[cite: 2]
     # Pattern 4: Strict regex filter for line monetary values at trailing edges
     amount_pattern = re.compile(r'\d[\d,]*\.\d{2}')
 
     with pdfplumber.open(uploaded_file) as pdf:
-        # State tracking registers for multi-line bridging
         active_prefix = None
         active_sub_id = None
 
@@ -170,7 +169,6 @@ def parse_pdf_file(uploaded_file):
                 if not line_str:
                     continue
 
-                # Parse and track overall grand summary numbers from page footers
                 if line_str.lower().startswith("total") or "grand total" in line_str.lower():
                     amts = amount_pattern.findall(line_str)
                     if amts:
@@ -180,43 +178,35 @@ def parse_pdf_file(uploaded_file):
                             pass
                     continue
 
-                # State Step 1: Detect composite string rows (e.g. 26JUL_1201_17300100009)
-                comp_match = composite_invoice_pattern.search(line_str)
+                comp_match = composite_invoice_pattern.search(line_str)[cite: 2]
                 if comp_match:
-                    active_prefix = comp_match.group()
-                    # Check if sub-identifiers are combined on the same string block row
+                    active_prefix = comp_match.group()[cite: 2]
                     line_remainder = line_str.replace(active_prefix, "").strip()
                     remainder_numbers = re.findall(r'\b\d{3,4}\b', line_remainder)
                     if remainder_numbers:
-                        active_sub_id = remainder_numbers[0]
+                        active_sub_id = remainder_numbers[0][cite: 2]
                     continue
 
-                # State Step 2: Catch standalone standard structures (e.g. IN008868)
-                std_match = standard_invoice_pattern.search(line_str)
+                std_match = standard_invoice_pattern.search(line_str)[cite: 2]
                 if std_match:
-                    active_prefix = std_match.group()
-                    active_sub_id = None  # No sub-ID matching layer needed for clean alpha codes
+                    active_prefix = std_match.group()[cite: 2]
+                    active_sub_id = None
 
-                # State Step 3: Catch floating numeric sequence splits (e.g. 368 / 387 line segments)
-                iso_match = isolated_id_pattern.search(line_str)
+                iso_match = isolated_id_pattern.search(line_str)[cite: 2]
                 if iso_match and active_prefix and not active_prefix.startswith(("IN", "TI")):
-                    active_sub_id = iso_match.group()
+                    active_sub_id = iso_match.group()[cite: 2]
                     continue
 
-                # State Step 4: Final ledger row value confirmation mapping
                 amts = amount_pattern.findall(line_str)
                 if amts and active_prefix:
-                    # Guard selection to ensure parsing context doesn't read pricing headers
                     if "net amt" in line_str.lower() or "mrp" in line_str.lower():
                         continue
 
-                    # Select the full descriptive raw tracking string block value
-                    if active_prefix.startswith(("IN", "TI")):
-                        invoice_identity = active_prefix
-                    elif active_sub_id:
-                        invoice_identity = active_sub_id
+                    if active_prefix.startswith(("IN", "TI")):[cite: 2]
+                        invoice_identity = active_prefix[cite: 2]
+                    elif active_sub_id:[cite: 2]
+                        invoice_identity = active_sub_id[cite: 2]
                     else:
-                        # Extract the final consecutive digits if no sub_id layout line split was triggered
                         digits_found = re.findall(r'\d+', active_prefix)
                         invoice_identity = digits_found[-1] if digits_found else active_prefix
 
@@ -224,11 +214,10 @@ def parse_pdf_file(uploaded_file):
                         amt_val = float(amts[-1].replace(",", ""))
                         
                         if len(invoice_identity) >= 2:
-                            # --- Dynamic Resolution Slicing Rule Engine ---
                             slice_length = 4
                             final_invoice_slice = invoice_identity[-slice_length:]
                             
-                            # If a duplicate slice is identified, iteratively look for last 5, 6, 7... characters
+                            # Adaptive Deduplication resolution fallback scan loop logic
                             while final_invoice_slice in invoice_seen and slice_length < len(invoice_identity):
                                 slice_length += 1
                                 final_invoice_slice = invoice_identity[-slice_length:]
@@ -239,14 +228,12 @@ def parse_pdf_file(uploaded_file):
                             })
                             invoice_seen.add(final_invoice_slice)
                             
-                        # Reset tracking states for the next loop sequence block iteration
                         active_sub_id = None
-                        if active_prefix.startswith(("IN", "TI")):
-                            active_prefix = None
+                        if active_prefix.startswith(("IN", "TI")):[cite: 2]
+                            active_prefix = None[cite: 2]
                     except ValueError:
                         pass
 
-    # Safe math computation fallback
     if total_amount == 0.0 and invoices:
         total_amount = sum(i["amount"] for i in invoices)
 
