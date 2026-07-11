@@ -95,21 +95,8 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Perfectly Balanced Explicit Point Column Widths (Total width fits A4 printable profile seamlessly)
-    col_widths = [
-        22,  # No
-        62,  # Invoice Number (Perfect for clean non-wrapped header display)
-        90,  # Shop Name (Maintains an open handwriting buffer space)
-        50,  # Amount
-        32,  # BNW (Balanced for up to 4 digits without stacking header text)
-        42,  # Cancel (Stops breaking into 'Cance l')
-        42,  # Adjust
-        30,  # Dis
-        45,  # Cash
-        45,  # Credit
-        45,  # Cheque
-        32   # Rtn (Stops breaking into stacked individual characters)
-    ]
+    # Perfectly Balanced Explicit Point Column Widths
+    col_widths = [22, 62, 90, 50, 32, 42, 42, 30, 45, 45, 45, 32]
     
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
@@ -138,11 +125,81 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Stateful Line-by-Line Multi-Format Text Extraction Engine ---
+# --- Secondary Fallback Parser Matrix (Triggers if Audit Mismatch Detected) ---
+def parse_pdf_via_coordinates_fallback(uploaded_file):
+    invoices = []
+    invoice_seen = set()
+    raw_words = []
+    
+    with pdfplumber.open(uploaded_file) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(y_tolerance=3, x_tolerance=3)
+            for w in words:
+                raw_words.append({
+                    'text': w['text'].strip(),
+                    'top': round(w['top'], 1),
+                    'x0': round(w['x0'], 1),
+                    'page': page.page_number
+                })
+                
+    page_groups = {}
+    for w in raw_words:
+        p = w['page']
+        if p not in page_groups: page_groups[p] = []
+        page_groups[p].append(w)
+        
+    structured_rows = []
+    for p, words_on_page in page_groups.items():
+        words_on_page.sort(key=lambda x: (x['top'], x['x0']))
+        current_row = []
+        current_top = -100.0
+        for w in words_on_page:
+            if abs(w['top'] - current_top) <= 3.0:
+                current_row.append(w)
+            else:
+                if current_row: structured_rows.append(current_row)
+                current_row = [w]
+                current_top = w['top']
+        if current_row: structured_rows.append(current_row)
+
+    for r_idx, row in enumerate(structured_rows):
+        line_text = " ".join([w['text'] for w in row])
+        last_word = row[-1]['text']
+        if re.search(r'^\d[\d,]*\.\d{2}$', last_word) and not "total" in line_text.lower():
+            target_code = None
+            for check_idx in range(max(0, r_idx - 3), r_idx):
+                check_text = " ".join([w['text'] for w in structured_rows[check_idx]])
+                all_digits = re.findall(r'\d+', check_text)
+                if all_digits:
+                    candidate = max(all_digits, key=len)
+                    if len(candidate) >= 3:
+                        target_code = candidate
+                        break
+            if not target_code:
+                all_digits = re.findall(r'\d+', line_text.replace(last_word, ''))
+                if all_digits: target_code = max(all_digits, key=len)
+                
+            if target_code and len(target_code) >= 2:
+                try:
+                    amt_val = float(last_word.replace(",", ""))
+                    slice_len = 4
+                    final_slice = target_code[-slice_len:]
+                    while final_slice in invoice_seen and slice_len < len(target_code):
+                        slice_len += 1
+                        final_slice = target_code[-slice_len:]
+                    if final_slice not in invoice_seen:
+                        invoices.append({"invoice": final_slice, "amount": amt_val})
+                        invoice_seen.add(final_slice)
+                except ValueError:
+                    pass
+    return invoices
+
+# --- Primary Stateful Line-by-Line Multi-Format Text Extraction Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     total_amount = 0.0
     invoice_seen = set()
+    expected_entry_count = 0
 
     composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')
     standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')
@@ -155,22 +212,23 @@ def parse_pdf_file(uploaded_file):
 
         for page in pdf.pages:
             text = page.extract_text()
-            if not text:
-                continue
+            if not text: continue
 
             lines = text.splitlines()
             for line in lines:
                 line_str = line.strip()
-                if not line_str:
-                    continue
+                if not line_str: continue
+
+                # Count rows that look like entry rows (start with index digit followed by data blocks)
+                if re.match(r'^\b\d{1,2}\b\s+\b(TI|IN|\d{2}[A-Z]{3})\b|^\b\d{1,2}\b$', line_str):
+                    expected_entry_count += 1
 
                 if line_str.lower().startswith("total") or "grand total" in line_str.lower():
                     amts = amount_pattern.findall(line_str)
                     if amts:
                         try:
                             total_amount = float(amts[-1].replace(",", ""))
-                        except ValueError:
-                            pass
+                        except ValueError: pass
                     continue
 
                 comp_match = composite_invoice_pattern.search(line_str)
@@ -178,8 +236,7 @@ def parse_pdf_file(uploaded_file):
                     active_prefix = comp_match.group()
                     line_remainder = line_str.replace(active_prefix, "").strip()
                     remainder_numbers = re.findall(r'\b\d{3,4}\b', line_remainder)
-                    if remainder_numbers:
-                        active_sub_id = remainder_numbers[0]
+                    if remainder_numbers: active_sub_id = remainder_numbers[0]
                     continue
 
                 std_match = standard_invoice_pattern.search(line_str)
@@ -194,8 +251,7 @@ def parse_pdf_file(uploaded_file):
 
                 amts = amount_pattern.findall(line_str)
                 if amts and active_prefix:
-                    if "net amt" in line_str.lower() or "mrp" in line_str.lower():
-                        continue
+                    if "net amt" in line_str.lower() or "mrp" in line_str.lower(): continue
 
                     if active_prefix.startswith(("IN", "TI")):
                         invoice_identity = active_prefix
@@ -207,29 +263,32 @@ def parse_pdf_file(uploaded_file):
 
                     try:
                         amt_val = float(amts[-1].replace(",", ""))
-                        
                         if len(invoice_identity) >= 2:
                             slice_length = 4
                             final_invoice_slice = invoice_identity[-slice_length:]
-                            
                             while final_invoice_slice in invoice_seen and slice_length < len(invoice_identity):
                                 slice_length += 1
                                 final_invoice_slice = invoice_identity[-slice_length:]
 
-                            invoices.append({
-                                "invoice": final_invoice_slice,
-                                "amount": amt_val
-                            })
+                            invoices.append({"invoice": final_invoice_slice, "amount": amt_val})
                             invoice_seen.add(final_invoice_slice)
                             
                         active_sub_id = None
-                        if active_prefix.startswith(("IN", "TI")):
-                            active_prefix = None
-                    except ValueError:
-                        pass
+                        if active_prefix.startswith(("IN", "TI")): active_prefix = None
+                    except ValueError: pass
+
+    # ==================== THE AUDIT VERIFICATION ENGINE ====================
+    calculated_sum = sum(i["amount"] for i in invoices)
+    
+    # Audit Rule Trigger: If counts or sums don't match, run the fallback scanner to recover missing text fields
+    if len(invoices) < expected_entry_count or (total_amount > 0.0 and abs(calculated_sum - total_amount) > 0.05):
+        fallback_invoices = parse_pdf_via_coordinates_fallback(uploaded_file)
+        if len(fallback_invoices) > len(invoices):
+            invoices = fallback_invoices
+            calculated_sum = sum(i["amount"] for i in invoices)
 
     if total_amount == 0.0 and invoices:
-        total_amount = sum(i["amount"] for i in invoices)
+        total_amount = calculated_sum
 
     return invoices, total_amount
 
@@ -251,7 +310,7 @@ if uploaded_file is not None:
     invoices, total_amt = parse_pdf_file(uploaded_file)
 
     if invoices:
-        st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
+        st.success(f"Audit Complete: Processed {len(invoices)} entries. System Sale Value: LKR {total_amt:,.2f}")
 
         with st.spinner("Compiling structural printable layout..."):
             pdf_data = generate_cash_sheet_pdf(invoices, total_amt)
