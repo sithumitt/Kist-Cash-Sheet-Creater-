@@ -2,7 +2,7 @@ import io
 import re
 import streamlit as st
 import docx
-from pypdf import PdfReader
+import pdfplumber
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -307,44 +307,45 @@ def generate_cash_sheet(invoices, total_amount):
     target_stream.seek(0)
     return target_stream
 
-# --- Token-Based Robust Extraction Engine ---
-def parse_pdf_file(uploaded_file):
-    reader = PdfReader(uploaded_file)
-    full_text = ""
-    for page in reader.pages:
-        full_text += page.extract_text() + "\n"
-        
-    # Standardize spaces and clean pipes to safeguard broken text alignments
-    normalized_text = re.sub(r'\s*\|\s*', '|', full_text)
-    
-    # Extract only the Invoice Summary section tokens at the tail end
-    invoice_block_match = re.search(r'Net Amt \(LKR\)(.*)', normalized_text, re.DOTALL)
-    if not invoice_block_match:
-        return [], 0.0
-        
-    invoice_block = invoice_block_match.group(1)
-    
-    # Capture all individual invoice lines
-    invoice_matches = re.findall(r'(\bT[I1]0\d{5}\b).*?\|([\d,]+\.\d{2})', invoice_block)
-    
+# --- High-Reliability Visual Table Extraction Engine ---
+def parse_pdf_file(file_bytes):
     invoices = []
-    for inv, amt_str in invoice_matches:
-        try:
-            amt = float(amt_str.replace(',', ''))
-            invoices.append({'invoice': inv, 'amount': amt})
-        except ValueError:
-            pass
-            
-    # Capture the grand total calculation value
-    total_match = re.search(r'Total\|([\d,]+\.\d{2})', invoice_block)
     grand_total = 0.0
-    if total_match:
-        try:
-            grand_total = float(total_match.group(1).replace(',', ''))
-        except ValueError:
-            pass
-            
-    # Fallback to compute total if not explicitly found in block structure
+    
+    # Target invoices matching structural codes
+    invoice_pattern = re.compile(r'^\bT[I1]0\d{5}\b$')
+
+    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+        for page in pdf.pages:
+            # Extract structured grids regardless of multi-column plain-text shifts
+            tables = page.extract_tables()
+            for table in tables:
+                for row in table:
+                    # Clean empty/none elements out of rows safely
+                    row_cells = [str(c).strip() for c in row if c is not None]
+                    
+                    # Scan for the explicit Total amount inside a table row structure
+                    if any("Total" in cell for cell in row_cells):
+                        for cell in reversed(row_cells):
+                            cleaned_val = cell.replace(',', '')
+                            if re.match(r'^\d+\.\d{2}$', cleaned_val):
+                                grand_total = float(cleaned_val)
+                                break
+                        continue
+                    
+                    # Look for explicit invoice rows by validation matches
+                    for i, cell in enumerate(row_cells):
+                        if invoice_pattern.match(cell):
+                            # Net Amt (LKR) is positioned at the final column index boundary
+                            try:
+                                amt_str = row_cells[-1].replace(',', '')
+                                amt_val = float(amt_str)
+                                invoices.append({'invoice': cell, 'amount': amt_val})
+                            except (ValueError, IndexError):
+                                pass
+                            break
+                            
+    # Fallback safe assignment if summary text row missed explicit mapping matching
     if grand_total == 0.0 and invoices:
         grand_total = sum(i['amount'] for i in invoices)
         
@@ -357,7 +358,9 @@ st.write("Upload the picklist PDF file below to instantly extract data and gener
 uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
 if uploaded_file is not None:
-    invoices, total_amt = parse_pdf_file(uploaded_file)
+    # Read file stream safely as standard binary bytes array objects
+    file_bytes = uploaded_file.read()
+    invoices, total_amt = parse_pdf_file(file_bytes)
     
     if invoices:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
@@ -372,4 +375,4 @@ if uploaded_file is not None:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     else:
-        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
+        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice rows.")
