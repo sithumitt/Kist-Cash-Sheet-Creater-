@@ -20,8 +20,6 @@ st.markdown("""
         border: none; padding: 0.5rem 2rem; font-weight: bold;
     }
     .stButton>button:hover { background-color: #356a95; color: white; }
-    h1, h2, h3 { color: #2c5d88; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .black-text { color: #000000 !important; font-weight: normal; }
     div[data-testid="stFileUploader"] {
         border: 2px dashed #b0c4de; padding: 20px; border-radius: 10px; background-color: #ffffff;
     }
@@ -252,8 +250,17 @@ def parse_pdf_file(uploaded_file):
     return invoices, grand_total
 
 # --- Main App Interface ---
-st.title("📄 KIST Sheet Custom Generation Engine")
-st.markdown('<p class="black-text">Upload the picklist PDF file below to instantly extract data and generate the structured layout.</p>', unsafe_allow_html=True)
+# Injects explicit inline styles to force both the title and label text to render completely black
+st.html("""
+    <div style="margin-bottom: 1.5rem;">
+        <h1 style="color: #000000 !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-bottom: 0.5rem; font-size: 2.25rem; font-weight: 700;">
+            📄 KIST Sheet Custom Generation Engine
+        </h1>
+        <p style="color: #000000 !important; font-size: 1rem; font-weight: normal; margin: 0;">
+            Upload the picklist PDF file below to instantly extract data and generate the structured layout.
+        </p>
+    </div>
+""")
 
 uploaded_file = st.file_uploader("Select input Picklist PDF file", type=["pdf"])
 
