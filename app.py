@@ -4,7 +4,7 @@ import streamlit as st
 import pdfplumber
 
 # ReportLab core engines for precise programmatic PDF layout
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -29,26 +29,26 @@ st.markdown("""
 # --- ReportLab Pure-Python PDF Generation Layout ---
 def generate_cash_sheet_pdf(invoices, total_amount):
     buffer = io.BytesIO()
-    # Expanded standard margins (0.5 inch / 36 points) to fully utilize A4 space beautifully
+    # Switched to A4 portrait for optimized length to guarantee a strict 2-page layout limit
     doc = SimpleDocTemplate(
-        buffer, pagesize=letter,
-        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+        buffer, pagesize=A4,
+        rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30
     )
     story = []
     
-    # Text Typography Styles - All systematically increased for optimal visual depth
+    # Text Typography Styles - Enlarged fonts for high readability
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold',
-        fontSize=18, leading=22, alignment=1, spaceAfter=8, textColor=colors.HexColor("#000000")
+        fontSize=18, leading=22, alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
     )
     meta_style = ParagraphStyle(
         'MetaStyle', parent=styles['Normal'], fontName='Helvetica-Bold',
-        fontSize=10, leading=14, spaceAfter=12, textColor=colors.HexColor("#000000")
+        fontSize=10, leading=14, spaceAfter=10, textColor=colors.HexColor("#000000")
     )
     section_style = ParagraphStyle(
         'SectionStyle', parent=styles['Heading2'], fontName='Helvetica-Bold',
-        fontSize=13, leading=16, spaceBefore=8, spaceAfter=8, textColor=colors.HexColor("#000000")
+        fontSize=13, leading=16, spaceBefore=8, spaceAfter=6, textColor=colors.HexColor("#000000")
     )
     cell_style = ParagraphStyle(
         'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=11, alignment=1
@@ -94,26 +94,26 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Total printable width is 540 points (Letter width 612 - 72 margins)
-    # Scaled to maintain proportional narrow tracking columns and wider entry columns
-    col_widths = [22, 58, 65, 55, 30, 36, 36, 30, 62, 62, 62, 22]
+    # A4 width is 595. Margin calculations give 535 points of clean dynamic runtime printable span
+    # Expanded space assigned directly to Cash, Credit, Cheque input tracking lines
+    col_widths = [22, 58, 64, 54, 30, 35, 35, 30, 62, 62, 62, 21]
     
-    # Relaxed padding parameters (TOP/BOTTOM set to 6 points to give writing comfort)
+    # Expanded padding parameters (TOP/BOTTOM set to 5.5pt for handwriting visibility)
     main_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 5.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5.5),
         ('LEFTPADDING', (0,0), (-1,-1), 2),
         ('RIGHTPADDING', (0,0), (-1,-1), 2),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), # highlight ST row
     ])
     
     story.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 10))
     
     sales_labels = [
         "Biscuits sale : _______________________", "Nectar Sale : _______________________",
@@ -131,15 +131,15 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     for r_idx in range(1, 11):
         rec_data.append([Paragraph(str(r_idx), cell_style)] + [Paragraph("", cell_style) for _ in range(5)])
         
-    rec_widths = [30, 75, 195, 80, 80, 80] # Total 540
+    rec_widths = [30, 75, 190, 80, 80, 80] # Total 535
     rec_table_style = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 4.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
     ])
     story.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
     
     story.append(Paragraph("Cash Sheet Balancing", section_style))
     
@@ -168,29 +168,29 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         [Paragraph("Banked Value.", cell_left), Paragraph("", cell_style)]
     ]
     
-    # side-by-side composite grid alignment (Left width: 265pt, Right width: 265pt + 10pt buffer margin)
+    # side-by-side composite grid alignment (Left width: 265pt, Right width: 265pt + clear balance spacing)
     left_table = Table(left_table_data, colWidths=[155, 110])
     left_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
     ] + left_style_actions))
     
     right_table = Table(right_table_data, colWidths=[155, 110])
     right_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
         ('BACKGROUND', (0,0), (-1,0), colors.white),
-        ('TOPPADDING', (0,0), (-1,-1), 5), ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,3), (1,3), 45), # Open visual window area for expense tracking details
+        ('TOPPADDING', (0,0), (-1,-1), 4.5), ('BOTTOMPADDING', (0,0), (-1,-1), 4.5),
+        ('BOTTOMPADDING', (0,3), (1,3), 36), # Adjusted vertical window area for clear handwriting notes
     ]))
     
-    master_balancing_table = Table([[left_table, right_table]], colWidths=[268, 272])
+    master_balancing_table = Table([[left_table, right_table]], colWidths=[265, 270])
     master_balancing_table.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
         ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(master_balancing_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
     
     story.append(Paragraph("Calculating cash", section_style))
     denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
@@ -200,15 +200,15 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         p_style = cell_bold if denom == "Total" else cell_style
         denom_data.append([Paragraph(denom, p_style), Paragraph("", cell_style)])
         
-    denom_table = Table(denom_data, colWidths=[270, 270])
+    denom_table = Table(denom_data, colWidths=[267, 268])
     denom_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.white),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
-        ('TOPPADDING', (0,0), (-1,-1), 4), ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('TOPPADDING', (0,0), (-1,-1), 3.5), ('BOTTOMPADDING', (0,0), (-1,-1), 3.5),
         ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
     ]))
     story.append(denom_table)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
     
     story.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
     
