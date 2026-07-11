@@ -95,21 +95,22 @@ def generate_cash_sheet_pdf(invoices, total_amount):
         Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
     ])
     
-    # Proportional width redistribution adjustments targeting printable area (Total 523 points)
+    # Proportional width redistribution targeting printable area (Total 523 points)
+    # Shop Name reduced slightly to create 4-digit formatting buffers inside BNW and Rtn
     printable_width = 523
     col_widths = [
         printable_width * 0.04,  # No
-        printable_width * 0.11,  # Invoice Number space reduced
-        printable_width * 0.21,  # Shop Name expanded heavily
+        printable_width * 0.11,  # Invoice Number space
+        printable_width * 0.16,  # Shop Name horizontal footprint reduced (was 0.21)
         printable_width * 0.10,  # Amount
-        printable_width * 0.03,  # BNW column optimized strictly for 2 digits
+        printable_width * 0.055, # BNW column expanded for 4 digits (was 0.03)
         printable_width * 0.06,  # Cancel
         printable_width * 0.06,  # Adjust
         printable_width * 0.04,  # Dis
         printable_width * 0.11,  # Cash
         printable_width * 0.11,  # Credit
         printable_width * 0.11,  # Cheque
-        printable_width * 0.02   # Rtn
+        printable_width * 0.045  # Rtn column expanded for 4 digits (was 0.02)
     ]
     
     main_table_style = TableStyle([
@@ -145,12 +146,12 @@ def parse_pdf_file(uploaded_file):
     total_amount = 0.0
     invoice_seen = set()
 
-    # Pattern 1: Catch composite complex prefix dates (e.g. 26JUL_1201_17300100009)
-    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')
-    # Pattern 2: Catch standard prefixes (e.g. IN008868, TI009403)
-    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')
-    # Pattern 3: Catch floating isolated identifier lines (e.g. 368 or 387)
-    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')
+    # Pattern 1: Catch composite complex prefix dates (e.g. 26JUL_1201_17300100009)[cite: 2]
+    composite_invoice_pattern = re.compile(r'\b\d{2}[A-Z]{3}_\d{4,}[\w\d_]*\b')[cite: 2]
+    # Pattern 2: Catch standard prefixes (e.g. IN008868, TI009403)[cite: 2]
+    standard_invoice_pattern = re.compile(r'\b(IN|TI)\d{5,7}\b')[cite: 2]
+    # Pattern 3: Catch floating isolated identifier lines (e.g. 368 or 387)[cite: 2]
+    isolated_id_pattern = re.compile(r'^\b\d{3,4}\b$')[cite: 2]
     # Pattern 4: Strict regex filter for line monetary values at trailing edges
     amount_pattern = re.compile(r'\d[\d,]*\.\d{2}')
 
@@ -178,23 +179,23 @@ def parse_pdf_file(uploaded_file):
                             pass
                     continue
 
-                comp_match = composite_invoice_pattern.search(line_str)
+                comp_match = composite_invoice_pattern.search(line_str)[cite: 2]
                 if comp_match:
-                    active_prefix = comp_match.group()
+                    active_prefix = comp_match.group()[cite: 2]
                     line_remainder = line_str.replace(active_prefix, "").strip()
                     remainder_numbers = re.findall(r'\b\d{3,4}\b', line_remainder)
                     if remainder_numbers:
-                        active_sub_id = remainder_numbers[0]
+                        active_sub_id = remainder_numbers[0][cite: 2]
                     continue
 
-                std_match = standard_invoice_pattern.search(line_str)
+                std_match = standard_invoice_pattern.search(line_str)[cite: 2]
                 if std_match:
-                    active_prefix = std_match.group()
+                    active_prefix = std_match.group()[cite: 2]
                     active_sub_id = None
 
-                iso_match = isolated_id_pattern.search(line_str)
+                iso_match = isolated_id_pattern.search(line_str)[cite: 2]
                 if iso_match and active_prefix and not active_prefix.startswith(("IN", "TI")):
-                    active_sub_id = iso_match.group()
+                    active_sub_id = iso_match.group()[cite: 2]
                     continue
 
                 amts = amount_pattern.findall(line_str)
@@ -202,10 +203,10 @@ def parse_pdf_file(uploaded_file):
                     if "net amt" in line_str.lower() or "mrp" in line_str.lower():
                         continue
 
-                    if active_prefix.startswith(("IN", "TI")):
-                        invoice_identity = active_prefix
-                    elif active_sub_id:
-                        invoice_identity = active_sub_id
+                    if active_prefix.startswith(("IN", "TI")):[cite: 2]
+                        invoice_identity = active_prefix[cite: 2]
+                    elif active_sub_id:[cite: 2]
+                        invoice_identity = active_sub_id[cite: 2]
                     else:
                         digits_found = re.findall(r'\d+', active_prefix)
                         invoice_identity = digits_found[-1] if digits_found else active_prefix
@@ -229,8 +230,8 @@ def parse_pdf_file(uploaded_file):
                             invoice_seen.add(final_invoice_slice)
                             
                         active_sub_id = None
-                        if active_prefix.startswith(("IN", "TI")):
-                            active_prefix = None
+                        if active_prefix.startswith(("IN", "TI")):[cite: 2]
+                            active_prefix = None[cite: 2]
                     except ValueError:
                         pass
 
