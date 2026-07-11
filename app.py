@@ -210,28 +210,37 @@ def parse_pdf_file(uploaded_file):
                     if "net amt" in line_str.lower() or "mrp" in line_str.lower():
                         continue
 
-                    # Select the definitive identifier string block value
+                    # Select the full descriptive raw tracking string block value
                     if active_prefix.startswith(("IN", "TI")):
                         invoice_identity = active_prefix
                     elif active_sub_id:
-                        invoice_identity = f"{active_prefix}\n{active_sub_id}"
+                        invoice_identity = active_sub_id
                     else:
-                        invoice_identity = active_prefix
+                        # Extract the final consecutive digits if no sub_id layout line split was triggered
+                        digits_found = re.findall(r'\d+', active_prefix)
+                        invoice_identity = digits_found[-1] if digits_found else active_prefix
 
                     try:
                         amt_val = float(amts[-1].replace(",", ""))
                         
-                        # De-duplicate entries and drop any empty/corrupted noise strings
-                        if invoice_identity not in invoice_seen and len(invoice_identity) > 2:
+                        if len(invoice_identity) >= 2:
+                            # --- Dynamic Resolution Slicing Rule Engine ---
+                            slice_length = 4
+                            final_invoice_slice = invoice_identity[-slice_length:]
+                            
+                            # If a duplicate slice is identified, iteratively look for last 5, 6, 7... characters
+                            while final_invoice_slice in invoice_seen and slice_length < len(invoice_identity):
+                                slice_length += 1
+                                final_invoice_slice = invoice_identity[-slice_length:]
+
                             invoices.append({
-                                "invoice": invoice_identity,
+                                "invoice": final_invoice_slice,
                                 "amount": amt_val
                             })
-                            invoice_seen.add(invoice_identity)
+                            invoice_seen.add(final_invoice_slice)
                             
                         # Reset tracking states for the next loop sequence block iteration
                         active_sub_id = None
-                        # Keep active_prefix as fallback unless standard invoice matched
                         if active_prefix.startswith(("IN", "TI")):
                             active_prefix = None
                     except ValueError:
