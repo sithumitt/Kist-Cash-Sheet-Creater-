@@ -2,271 +2,221 @@ import io
 import re
 import streamlit as st
 import pdfplumber
-from weasyprint import HTML
 
-# --- Custom Styling & Theme Configuration ---
+# ReportLab core engines for precise programmatic PDF layout
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+# --- Custom Styling & Theme Configuration for Streamlit ---
 st.set_page_config(page_title="KIST Document Generator", page_icon="📄", layout="centered")
 
 st.markdown("""
     <style>
-    .stApp {
-        background-color: #f4f8fb;
-    }
+    .stApp { background-color: #f4f8fb; }
     .stButton>button {
-        background-color: #4682B4;
-        color: white;
-        border-radius: 6px;
-        border: none;
-        padding: 0.5rem 2rem;
-        font-weight: bold;
+        background-color: #4682B4; color: white; border-radius: 6px;
+        border: none; padding: 0.5rem 2rem; font-weight: bold;
     }
-    .stButton>button:hover {
-        background-color: #356a95;
-        color: white;
-    }
-    h1, h2, h3 {
-        color: #2c5d88;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    .black-text {
-        color: #000000 !important;
-        font-weight: normal;
-    }
+    .stButton>button:hover { background-color: #356a95; color: white; }
+    h1, h2, h3 { color: #2c5d88; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .black-text { color: #000000 !important; font-weight: normal; }
     div[data-testid="stFileUploader"] {
-        border: 2px dashed #b0c4de;
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #ffffff;
+        border: 2px dashed #b0c4de; padding: 20px; border-radius: 10px; background-color: #ffffff;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- PDF Generation Function (HTML to WeasyPrint PDF Workflow) ---
+# --- ReportLab Pure-Python PDF Generation Layout ---
 def generate_cash_sheet_pdf(invoices, total_amount):
-    # Constructing rows for parsed data dynamically
-    invoice_rows_html = ""
+    buffer = io.BytesIO()
+    # Tight margins (0.35 inch / 25 points) to guarantee 2-page fit
+    doc = SimpleDocTemplate(
+        buffer, pagesize=letter,
+        rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25
+    )
+    story = []
+    
+    # Text Typography Styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'TitleStyle', parent=styles['Heading1'], fontName='Helvetica-Bold',
+        fontSize=14, leading=16, alignment=1, spaceAfter=4, textColor=colors.HexColor("#000000")
+    )
+    meta_style = ParagraphStyle(
+        'MetaStyle', parent=styles['Normal'], fontName='Helvetica-Bold',
+        fontSize=8.5, leading=10, spaceAfter=8, textColor=colors.HexColor("#000000")
+    )
+    section_style = ParagraphStyle(
+        'SectionStyle', parent=styles['Heading2'], fontName='Helvetica-Bold',
+        fontSize=11, leading=13, spaceBefore=4, spaceAfter=4, textColor=colors.HexColor("#000000")
+    )
+    cell_style = ParagraphStyle(
+        'CellStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=1
+    )
+    cell_bold = ParagraphStyle(
+        'CellBold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=8.5, alignment=1
+    )
+    cell_left = ParagraphStyle(
+        'CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=0
+    )
+    cell_right = ParagraphStyle(
+        'CellRight', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=8.5, alignment=2
+    )
+
+    # ==================== PAGE 1 ====================
+    story.append(Paragraph("KIST DAY CASH SHEET", title_style))
+    story.append(Paragraph("Date : ___________________    Route : ___________________    No.Bill : ___________________", meta_style))
+    
+    headers = ["No", "Invoice Number", "Shop Name", "Amount", "BNW", "Cancel", "Adjust", "Dis", "Cash", "Credit", "Cheque", "Rtn"]
+    table_data = [[Paragraph(h, cell_bold) for h in headers]]
+    
+    # Inject active rows parsed from raw file
     idx = 1
     for item in invoices:
-        invoice_rows_html += f"""
-        <tr>
-            <td>{idx}</td>
-            <td>{item['invoice']}</td>
-            <td></td>
-            <td class="align-right">{item['amount']:.2f}</td>
-            <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-        </tr>"""
+        table_data.append([
+            Paragraph(str(idx), cell_style), Paragraph(item['invoice'], cell_style), Paragraph("", cell_style),
+            Paragraph(f"{item['amount']:.2f}", cell_right),
+            Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style),
+            Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
+        ])
         idx += 1
         
-    # Standard dynamic empty lines for manual ledger input additions
+    # Standard blank spacer rows for manual adjustments
     for _ in range(5):
-        invoice_rows_html += f"""
-        <tr>
-            <td>{idx}</td>
-            <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-        </tr>"""
+        table_data.append([Paragraph(str(idx), cell_style)] + [Paragraph("", cell_style) for _ in range(11)])
         idx += 1
-
-    html_template = f"""<!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <style>
-    @page {{
-        size: A4 portrait;
-        margin: 8mm 8mm;
-        background-color: #ffffff;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-        margin: 0; padding: 0;
-        font-family: 'Arial', sans-serif;
-        color: #000000; font-size: 7.5pt;
-        line-height: 1.1;
-    }}
-    .title {{
-        text-align: center; font-size: 13pt; font-weight: bold; margin-bottom: 3px;
-    }}
-    .meta-info {{ font-size: 8.5pt; margin-bottom: 6px; font-weight: bold; }}
-    table {{
-        width: 100%; border-collapse: collapse; margin-bottom: 6px; table-layout: fixed;
-    }}
-    th, td {{
-        border: 0.5px solid #aaaaaa; padding: 2px 2px; text-align: center;
-        vertical-align: middle; overflow: hidden; white-space: nowrap;
-    }}
-    th {{ background-color: #ffffff; font-weight: bold; color: #000000; font-size: 7.5pt; }}
-    .align-left {{ text-align: left; padding-left: 3px; }}
-    .align-right {{ text-align: right; padding-right: 3px; }}
-    .bg-st {{ background-color: #ebf2f8; font-weight: bold; }}
-    .bg-balance {{ background-color: #f0f4f8; font-weight: bold; }}
-    
-    /* Configured layout widths matching prompt requirements */
-    .col-no {{ width: 4.5%; }}
-    .col-inv {{ width: 10%; }}      /* Reduced width */
-    .col-shop {{ width: 11.5%; }}    /* Reduced width */
-    .col-amt {{ width: 10%; }}      /* Reduced width */
-    .col-bnw {{ width: 5%; }}
-    .col-cancel {{ width: 6.5%; }}
-    .col-adjust {{ width: 6.5%; }}
-    .col-dis {{ width: 5.5%; }}
-    .col-cash {{ width: 11.5%; }}   /* Expanded width */
-    .col-credit {{ width: 11.5%; }} /* Expanded width */
-    .col-cheque {{ width: 11.5%; }} /* Expanded width */
-    .col-rtn {{ width: 6.5%; }}
-
-    .sales-summary {{ font-size: 8.5pt; font-weight: bold; margin-top: 5px; margin-bottom: 12px; }}
-    .sales-line {{ margin-bottom: 3px; }}
-    .page-break {{ page-break-before: always; }}
-    .section-title {{ font-size: 10pt; font-weight: bold; margin-top: 2px; margin-bottom: 4px; }}
-    .flex-table-container {{ display: table; width: 100%; }}
-    .flex-table-cell {{ display: table-cell; width: 50%; vertical-align: top; }}
-    .flex-table-cell:first-child {{ padding-right: 6px; }}
-    .flex-table-cell:last-child {{ padding-left: 6px; }}
-    </style>
-    </head>
-    <body>
-
-        <!-- ================= PAGE 1 ================= -->
-        <div class="title">KIST DAY CASH SHEET</div>
-        <div class="meta-info">
-            Date : ___________________ &nbsp;&nbsp;&nbsp;&nbsp; Route : ___________________ &nbsp;&nbsp;&nbsp;&nbsp; No.Bill : ___________________
-        </div>
-
-        <table>
-            <thead>
-                <tr>
-                    <th class="col-no">No</th>
-                    <th class="col-inv">Invoice Number</th>
-                    <th class="col-shop">Shop Name</th>
-                    <th class="col-amt">Amount</th>
-                    <th class="col-bnw">BNW</th>
-                    <th class="col-cancel">Cancel</th>
-                    <th class="col-adjust">Adjust</th>
-                    <th class="col-dis">Dis</th>
-                    <th class="col-cash">Cash</th>
-                    <th class="col-credit">Credit</th>
-                    <th class="col-cheque">Cheque</th>
-                    <th class="col-rtn">Rtn</th>
-                </tr>
-            </thead>
-            <tbody>
-                {invoice_rows_html}
-                <tr class="bg-st">
-                    <td>ST</td>
-                    <td>System Sale</td>
-                    <td></td>
-                    <td class="align-right">{total_amount:,.2f}</td>
-                    <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div class="sales-summary">
-            <div class="sales-line">Biscuits sale : _______________________</div>
-            <div class="sales-line">Nectar Sale : _______________________</div>
-            <div class="sales-line">Water Sale : _______________________</div>
-            <div class="sales-line">Total Sale : _______________________</div>
-        </div>
-
-        <!-- ================= PAGE 2 ================= -->
-        <div class="page-break"></div>
         
-        <div class="section-title">Cash Receivables</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 6%;">NO</th>
-                    <th style="width: 15%;">Bill Date</th>
-                    <th style="width: 34%;">Shop</th>
-                    <th style="width: 15%;">Credit Amount</th>
-                    <th style="width: 15%;">Pay Amount</th>
-                    <th style="width: 15%;">Balance</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>1</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>2</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>3</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>4</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>5</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>6</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>7</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>8</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>9</td><td></td><td></td><td></td><td></td><td></td></tr>
-                <tr><td>10</td><td></td><td></td><td></td><td></td><td></td></tr>
-            </tbody>
-        </table>
-
-        <div class="section-title">Cash Sheet Balancing</div>
-        <div class="flex-table-container">
-            <div class="flex-table-cell">
-                <table>
-                    <tbody>
-                        <tr><td class="align-left" style="width: 60%;">System Sale</td><td class="align-right" style="width: 40%;">{total_amount:,.2f}</td></tr>
-                        <tr><td class="align-left">FOC</td><td></td></tr>
-                        <tr><td class="align-left">Total Cancel</td><td></td></tr>
-                        <tr class="bg-balance"><td class="align-left">Balance (1)</td><td></td></tr>
-                        <tr><td class="align-left">Total Discounts</td><td></td></tr>
-                        <tr><td class="align-left">Total Adjust</td><td></td></tr>
-                        <tr><td class="align-left">Total Return</td><td></td></tr>
-                        <tr class="bg-balance"><td class="align-left">Balance (2)</td><td></td></tr>
-                        <tr><td class="align-left">Total Cash</td><td></td></tr>
-                        <tr><td class="align-left">Total Credit</td><td></td></tr>
-                        <tr><td class="align-left">Total Cheques</td><td></td></tr>
-                        <tr class="bg-balance"><td class="align-left">Balance (3)</td><td></td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="flex-table-cell">
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="align-left" style="width: 60%;">Cash Balance</th>
-                            <th style="width: 40%;"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td class="align-left">Total Day Cash</td><td></td></tr>
-                        <tr><td class="align-left">Total Credit Received</td><td></td></tr>
-                        <tr><td class="align-left" style="padding-bottom: 45px;">Total Expenses</td><td></td></tr>
-                        <tr><td class="align-left">Banked Value.</td><td></td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="section-title">Calculating cash</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 50%;">Cash Analitics</th>
-                    <th style="width: 50%;">Valuve</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>20</td><td></td></tr>
-                <tr><td>50</td><td></td></tr>
-                <tr><td>100</td><td></td></tr>
-                <tr><td>500</td><td></td></tr>
-                <tr><td>1000</td><td></td></tr>
-                <tr><td>2000</td><td></td></tr>
-                <tr><td>5000</td><td></td></tr>
-                <tr><td>coins</td><td></td></tr>
-                <tr class="bg-st"><td>Total</td><td></td></tr>
-            </tbody>
-        </table>
-
-        <div class="meta-info" style="margin-top: 10px; font-size: 8pt;">
-            Distance Travelled : ___________________ &nbsp;&nbsp;&nbsp;&nbsp; KM : ___________________ &nbsp;&nbsp;&nbsp;&nbsp; OOT : ___________________
-        </div>
-    </body>
-    </html>
-    """
+    # System Sale summary anchor line
+    table_data.append([
+        Paragraph("ST", cell_bold), Paragraph("System Sale", cell_bold), Paragraph("", cell_style),
+        Paragraph(f"{total_amount:,.2f}", ParagraphStyle('ST_R', parent=cell_right, fontName='Helvetica-Bold')),
+        Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style),
+        Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
+    ])
     
-    pdf_stream = io.BytesIO()
-    HTML(string=html_template).write_pdf(pdf_stream)
-    pdf_stream.seek(0)
-    return pdf_stream
+    # Column measurements tuning - Invoice/Shop contracted; Cash/Credit/Cheque expanded
+    # Total printable width is 562 points (Letter width 612 - 50 margins)
+    col_widths = [20, 50, 60, 55, 30, 36, 36, 30, 65, 65, 65, 50]
+    
+    # Ultra-compressed padding settings (TOP/BOTTOM padding to 2pt maps precisely to digit heights)
+    main_table_style = TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.white),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")), # highlight ST row
+    ])
+    
+    story.append(Table(table_data, colWidths=col_widths, style=main_table_style))
+    story.append(Spacer(1, 6))
+    
+    sales_labels = [
+        "Biscuits sale : _______________________", "Nectar Sale : _______________________",
+        "Water Sale : _______________________", "Total Sale : _______________________"
+    ]
+    for label in sales_labels:
+        story.append(Paragraph(label, meta_style))
+        
+    # ==================== PAGE 2 (STRICT LAYOUT BOUNDARY) ====================
+    story.append(PageBreak())
+    
+    story.append(Paragraph("Cash Receivables", section_style))
+    rec_headers = ["NO", "Bill Date", "Shop", "Credit Amount", "Pay Amount", "Balance"]
+    rec_data = [[Paragraph(rh, cell_bold) for rh in rec_headers]]
+    for r_idx in range(1, 11):
+        rec_data.append([Paragraph(str(r_idx), cell_style)] + [Paragraph("", cell_style) for _ in range(5)])
+        
+    rec_widths = [30, 80, 202, 85, 85, 80] # Total 562
+    rec_table_style = TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.white),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+    ])
+    story.append(Table(rec_data, colWidths=rec_widths, style=rec_table_style))
+    story.append(Spacer(1, 6))
+    
+    story.append(Paragraph("Cash Sheet Balancing", section_style))
+    
+    # Build System Balancing (Left side metrics block)
+    left_rows = [
+        ("System Sale", f"{total_amount:,.2f}"), ("FOC", ""), ("Total Cancel", ""), ("Balance (1)", ""),
+        ("Total Discounts", ""), ("Total Adjust", ""), ("Total Return", ""), ("Balance (2)", ""),
+        ("Total Cash", ""), ("Total Credit", ""), ("Total Cheques", ""), ("Balance (3)", "")
+    ]
+    left_table_data = []
+    left_style_actions = []
+    for r_idx, (item, val) in enumerate(left_rows):
+        is_bal = "Balance" in item or item == "System Sale"
+        p_style = cell_bold if is_bal else cell_left
+        v_style = ParagraphStyle('v', parent=cell_right, fontName='Helvetica-Bold' if is_bal else 'Helvetica')
+        left_table_data.append([Paragraph(item, p_style), Paragraph(val, v_style)])
+        if "Balance" in item:
+            left_style_actions.append(('BACKGROUND', (0, r_idx), (1, r_idx), colors.HexColor("#f0f4f8")))
+            
+    # Build Cash Balance (Right side tracking block)
+    right_table_data = [
+        [Paragraph("Cash Balance", cell_bold), Paragraph("", cell_style)],
+        [Paragraph("Total Day Cash", cell_left), Paragraph("", cell_style)],
+        [Paragraph("Total Credit Received", cell_left), Paragraph("", cell_style)],
+        [Paragraph("Total Expenses", cell_left), Paragraph("", cell_style)],
+        [Paragraph("Banked Value.", cell_left), Paragraph("", cell_style)]
+    ]
+    
+    # side-by-side composite grid alignment (Left width: 275pt, Right width: 275pt + 12pt clear spacer span)
+    left_table = Table(left_table_data, colWidths=[165, 110])
+    left_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+    ] + left_style_actions))
+    
+    right_table = Table(right_table_data, colWidths=[165, 110])
+    right_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+        ('BACKGROUND', (0,0), (-1,0), colors.white),
+        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,3), (1,3), 32), # Height spacer specifically configured for Manual Expense Line
+    ]))
+    
+    master_balancing_table = Table([[left_table, right_table]], colWidths=[278, 284])
+    master_balancing_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0), ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(master_balancing_table)
+    story.append(Spacer(1, 4))
+    
+    story.append(Paragraph("Calculating cash", section_style))
+    denom_headers = [Paragraph("Cash Analitics", cell_bold), Paragraph("Valuve", cell_bold)]
+    denom_data = [denom_headers]
+    denominations = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
+    for denom in denominations:
+        p_style = cell_bold if denom == "Total" else cell_style
+        denom_data.append([Paragraph(denom, p_style), Paragraph("", cell_style)])
+        
+    denom_table = Table(denom_data, colWidths=[281, 281])
+    denom_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.white),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#aaaaaa")),
+        ('TOPPADDING', (0,0), (-1,-1), 2), ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#ebf2f8")),
+    ]))
+    story.append(denom_table)
+    story.append(Spacer(1, 6))
+    
+    story.append(Paragraph("Distance Travelled : ___________________    KM : ___________________    OOT : ___________________", meta_style))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
 # --- Native pdfplumber Raw Text Extraction Engine ---
 def parse_pdf_file(uploaded_file):
@@ -277,12 +227,10 @@ def parse_pdf_file(uploaded_file):
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
             text_content = page.extract_text()
-            if text_content:
-                full_text += text_content + "\n"
+            if text_content: full_text += text_content + "\n"
 
     invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
-    if not invoice_section:
-        return [], 0.0
+    if not invoice_section: return [], 0.0
 
     invoice_block_text = invoice_section.group(1)
     matches = re.finditer(r'\b(TI\d{6})\b.*?([\d,]+\.\d{2})', invoice_block_text, re.DOTALL)
@@ -291,7 +239,6 @@ def parse_pdf_file(uploaded_file):
     for match in matches:
         inv_code = match.group(1).strip()
         amt_val = float(match.group(2).replace(',', ''))
-
         if inv_code not in seen_invoices:
             invoices.append({'invoice': inv_code, 'amount': amt_val})
             seen_invoices.add(inv_code)
