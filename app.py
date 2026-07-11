@@ -303,12 +303,12 @@ def parse_pdf_file(uploaded_file):
             if text_content: 
                 full_text += text_content + "\n"
 
-    # Extract the block located downstream from 'Net Amt (LKR)' marker phrase[cite: 2]
-    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)[cite: 2]
+    # Extract the block located downstream from 'Net Amt (LKR)' marker phrase
+    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
     if not invoice_section: 
         return [], 0.0
 
-    invoice_block_text = invoice_section.group(1)[cite: 2]
+    invoice_block_text = invoice_section.group(1)
     
     # Flexible row processing strategy: works with pipe layout variations or raw multiline sequences
     lines = invoice_block_text.split('\n')
@@ -317,10 +317,10 @@ def parse_pdf_file(uploaded_file):
     for line in lines:
         # Clean background noise components
         if "Total" in line and not invoices:
-            continue[cite: 2]
+            continue
             
         # 1. Flexible Multi-Format Invoice Number Extraction Logic
-        # Matches classic (TI009403) OR long system composite codes like (26JUL_1201_17300100009)[cite: 2]
+        # Matches classic (TI009403) OR long system composite codes like (26JUL_1201_17300100009)
         inv_match = re.search(r'\b(TI\d{5,7})\b|\b(\d{2}[A-Z]{3}[_\s\w\d]+?)\b', line)
         if inv_match:
             current_invoice_code = (inv_match.group(1) or inv_match.group(2)).strip()
@@ -336,9 +336,9 @@ def parse_pdf_file(uploaded_file):
             current_invoice_code = None
 
     # Calculate system sale value summation anchor
-    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)[cite: 2]
+    total_match = re.search(r'Total\s*(?:\|\s*)?([\d,]+\.\d{2})', invoice_block_text)
     if total_match:
-        grand_total = float(total_match.group(1).replace(',', ''))[cite: 2]
+        grand_total = float(total_match.group(1).replace(',', ''))
     elif invoices:
         grand_total = sum(i['amount'] for i in invoices)
 
@@ -374,4 +374,4 @@ if uploaded_file is not None:
             mime="application/pdf"
         )
     else:
-        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")[cite: 2]
+        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
