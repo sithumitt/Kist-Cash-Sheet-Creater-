@@ -291,83 +291,122 @@ def generate_cash_sheet_pdf(invoices, total_amount):
     buffer.seek(0)
     return buffer
 
-# --- Universal Line-by-Line Multi-Format Text Extraction Engine ---
+# --- Universal Spatial Coordinate Text Alignment Parsing Engine ---
 def parse_pdf_file(uploaded_file):
     invoices = []
     grand_total = 0.0
-    full_text = ""
-
+    
+    # 1. Capture the raw word map tracking coordinates from the document pages
+    raw_words = []
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
-            text_content = page.extract_text()
-            if text_content: 
-                full_text += text_content + "\n"
-
-    # Split invoice content segments following the Net Amt column block layout
-    invoice_section = re.search(r'Net Amt \(LKR\)(.*)', full_text, re.DOTALL)
-    if not invoice_section: 
+            words = page.extract_words(y_tolerance=3, x_tolerance=3)
+            for w in words:
+                raw_words.append({
+                    'text': w['text'].strip(),
+                    'top': round(w['top'], 1),
+                    'bottom': round(w['bottom'], 1),
+                    'x0': round(w['x0'], 1),
+                    'page': page.page_number
+                })
+                
+    if not raw_words:
         return [], 0.0
 
-    invoice_block_text = invoice_section.group(1)
-    lines = invoice_block_text.split('\n')
-    
-    # Pre-compiled regex pattern to capture values at the end of valid ledger rows
-    amount_pattern = re.compile(r'([\d,]+\.\d{2})\s*$')
-    
-    # Sliding History Buffer to look back into multiline outputs safely
-    history_lines = []
+    # 2. Sort words by page, then group into horizontal rows by their dynamic Y-height ('top')
+    page_groups = {}
+    for w in raw_words:
+        p = w['page']
+        if p not in page_groups:
+            page_groups[p] = []
+        page_groups[p].append(w)
+        
+    structured_rows = []
+    for p, words_on_page in page_groups.items():
+        # Sort words primarily from top-to-bottom, then left-to-right
+        words_on_page.sort(key=lambda x: (x['top'], x['x0']))
+        
+        current_row = []
+        current_top = -100.0
+        
+        for w in words_on_page:
+            # Group words sitting on the same horizontal line baseline (within a 3pt window tolerance)
+            if abs(w['top'] - current_top) <= 3.0:
+                current_row.append(w)
+            else:
+                if current_row:
+                    structured_rows.append(current_row)
+                current_row = [w]
+                current_top = w['top']
+        if current_row:
+            structured_rows.append(current_row)
 
-    for line in lines:
-        line_str = line.strip()
-        if not line_str:
-            continue
-            
-        history_lines.append(line_str)
-        # Keep only the last 4 rows in active loop memory context
-        if len(history_lines) > 4:
-            history_lines.pop(0)
-            
-        # Parse the money value at the right end of the active row string
-        amt_match = amount_pattern.search(line_str)
+    # 3. Step through structured rows to pair the target amounts with their true invoice tracking IDs
+    for r_idx, row in enumerate(structured_rows):
+        line_text = " ".join([w['text'] for w in row])
+        
+        # Check if the row terminates with a valid float billing currency format
+        last_word = row[-1]['text']
+        amt_match = re.search(r'^\d[\d,]*\.\d{2}$', last_word)
+        
         if amt_match:
-            amt_text = amt_match.group(1)
-            
-            # Skip overall summary total lines
-            if "total" in line_str.lower():
-                if "grand total" in line_str.lower() or line_str.lower().startswith("total"):
+            # Skip overall summary total calculations
+            if "total" in line_text.lower():
+                if "grand total" in line_text.lower() or line_text.lower().startswith("total"):
                     try:
-                        grand_total = float(amt_text.replace(',', ''))
+                        grand_total = float(last_word.replace(',', ''))
                     except ValueError:
                         pass
                 continue
-                
-            # Fallback evaluation context targets history lines to grab the segmented invoice numbers
-            final_invoice = None
             
-            # Walk backward from current row index to evaluate previous string segments
-            for hist_line in reversed(history_lines):
-                # Clean out current amount field to prevent extracting its decimal integers
-                clean_hist = hist_line.replace(amt_text, '').strip()
+            # Identify the Route descriptor code signature row to verify it's an invoice record line
+            if not re.search(r'\b\d{3}R\d{2}\b', line_text):
+                continue
                 
-                # Capture digits clusters
-                numbers = re.findall(r'\d+', clean_hist)
-                if numbers:
-                    # Find the primary sequential identifier (longer digit sets take priority over row indexes)
-                    candidate = max(numbers, key=len)
-                    # Slices strictly the last 4 digits
-                    if len(candidate) >= 3:
-                        final_invoice = candidate[-4:]
+            # STRATEGY: Look at the text rows right above it to extract the real tracking code sequence safely[cite: 2]
+            # Since the code can sit 1 or 2 rows higher depending on page wrap splits[cite: 2]
+            target_invoice_code = None
+            
+            # Scan backward up to 3 vertical lines to trace the matching header component blocks
+            for check_idx in range(max(0, r_idx - 3), r_idx):
+                check_row = structured_rows[check_idx]
+                check_text = " ".join([w['text'] for w in check_row])
+                
+                # Check for the long date signature segment string layout[cite: 2]
+                if re.search(r'\b\d{2}[A-Z]{3}_\d{4}', check_text) or re.search(r'\b\d{2}[A-Z]{3}\b', check_text):
+                    # Gather all digit clusters present inside that localized bounding context
+                    all_digits = re.findall(r'\d+', check_text)
+                    if all_digits:
+                        # Grab the tracking number string (longer clusters take priority over simple single row indexes)[cite: 2]
+                        selected_digits = max(all_digits, key=len)
+                        
+                        # Rule rule: Filter out long static system routing variables if they are accidentally selected
+                        if len(selected_digits) < 3 and len(all_digits) > 1:
+                            sorted_digits = sorted(all_digits, key=len, reverse=True)
+                            selected_digits = sorted_digits[0]
+                            
+                        # Rule: Slice strictly the final 4 digits block[cite: 2]
+                        target_invoice_code = selected_digits[-4:]
                         break
+                        
+            # Alternate logic fallback: Parse the current row directly if digits are on the same baseline
+            if not target_invoice_code:
+                all_digits = re.findall(r'\d+', line_text.replace(last_word, ''))
+                # Filter out customer code components or route indicators
+                filtered_digits = [d for d in all_digits if len(d) <= 4 and d != "730"]
+                if filtered_digits:
+                    target_invoice_code = filtered_digits[-1][-4:]
             
-            if final_invoice:
+            if target_invoice_code:
                 try:
-                    amt_val = float(amt_text.replace(',', ''))
-                    # Protect data array elements from duplicated value injection rows
-                    if not any(i['invoice'] == final_invoice for i in invoices):
-                        invoices.append({'invoice': final_invoice, 'amount': amt_val})
+                    amt_val = float(last_word.replace(',', ''))
+                    # Prevent duplicated extraction injections
+                    if not any(item['invoice'] == target_invoice_code for item in invoices):
+                        invoices.append({'invoice': target_invoice_code, 'amount': amt_val})
                 except ValueError:
                     pass
 
+    # Fallback to compute total if sum total isn't parsed explicitly from document footers
     if invoices and grand_total == 0.0:
         grand_total = sum(i['amount'] for i in invoices)
 
