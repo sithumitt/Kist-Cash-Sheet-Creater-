@@ -307,54 +307,47 @@ def generate_cash_sheet(invoices, total_amount):
     target_stream.seek(0)
     return target_stream
 
-# --- Dynamic PDF Table Section Target Extractor Engine ---
+# --- Token-Based Robust Extraction Engine ---
 def parse_pdf_file(uploaded_file):
     reader = PdfReader(uploaded_file)
     full_text = ""
     for page in reader.pages:
         full_text += page.extract_text() + "\n"
         
-    lines = full_text.split('\n')
-    invoices = []
-    grand_total = 0.0
+    # Standardize spaces and clean pipes to safeguard broken text alignments
+    normalized_text = re.sub(r'\s*\|\s*', '|', full_text)
     
-    # Flags to target the specific Invoice list structural boundaries
-    in_invoice_section = False
-    
-    # Strict regex matching columns: No | Invoice | Customer Code | Customer Name | Sales Route | Net Amt (LKR)
-    invoice_row_pattern = re.compile(r'^\s*(\d+)\s*\|\s*([A-Za-z0-9]+)\s*\|\s*([A-Za-z0-9]+)\s*\|')
-    
-    for line in lines:
-        cleaned_line = line.strip()
+    # Extract only the Invoice Summary section tokens at the tail end
+    invoice_block_match = re.search(r'Net Amt \(LKR\)(.*)', normalized_text, re.DOTALL)
+    if not invoice_block_match:
+        return [], 0.0
         
-        # Identify start of target table section
-        if "Net Amt (LKR)" in cleaned_line:
-            in_invoice_section = True
-            continue
+    invoice_block = invoice_block_match.group(1)
+    
+    # Capture all individual invoice lines
+    invoice_matches = re.findall(r'(\bT[I1]0\d{5}\b).*?\|([\d,]+\.\d{2})', invoice_block)
+    
+    invoices = []
+    for inv, amt_str in invoice_matches:
+        try:
+            amt = float(amt_str.replace(',', ''))
+            invoices.append({'invoice': inv, 'amount': amt})
+        except ValueError:
+            pass
             
-        if in_invoice_section:
-            # Check for grand total end pattern line
-            if "Total" in cleaned_line and "|" in cleaned_line:
-                parts = [p.strip() for p in cleaned_line.split("|")]
-                if len(parts) >= 2:
-                    try:
-                        grand_total = float(parts[-1].replace(',', ''))
-                    except ValueError:
-                        pass
-                continue
-                
-            # Parse normal structural rows
-            match = invoice_row_pattern.match(cleaned_line)
-            if match:
-                parts = [p.strip() for p in cleaned_line.split("|")]
-                if len(parts) >= 6:
-                    inv_num = parts[1]
-                    try:
-                        amt = float(parts[5].replace(',', ''))
-                        invoices.append({'invoice': inv_num, 'amount': amt})
-                    except ValueError:
-                        pass
-                        
+    # Capture the grand total calculation value
+    total_match = re.search(r'Total\|([\d,]+\.\d{2})', invoice_block)
+    grand_total = 0.0
+    if total_match:
+        try:
+            grand_total = float(total_match.group(1).replace(',', ''))
+        except ValueError:
+            pass
+            
+    # Fallback to compute total if not explicitly found in block structure
+    if grand_total == 0.0 and invoices:
+        grand_total = sum(i['amount'] for i in invoices)
+        
     return invoices, grand_total
 
 # --- Main App Execution Interface ---
@@ -379,4 +372,4 @@ if uploaded_file is not None:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     else:
-        st.error("Could not parse invoices structures. Please verify that the PDF contains the standard table formatting pattern values.")
+        st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
