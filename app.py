@@ -1,16 +1,13 @@
 import io
-import os
 import re
 import streamlit as st
 import pdfplumber
 
-# ReportLab core engines for precise programmatic PDF layout
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from docx import Document
+from docx.shared import Pt, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 # --- Custom Styling & Theme Configuration for Streamlit ---
 st.set_page_config(page_title="KIST Document Generator", page_icon="📄", layout="centered")
@@ -30,200 +27,179 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# SINHALA FONT REGISTRATION
-# The sample Word document uses Sinhala labels/headers, so we need a
-# Unicode font that actually contains Sinhala glyphs (Helvetica does
-# not). Put NotoSansSinhala-Regular.ttf / -Bold.ttf in a "fonts/"
-# folder next to this script (both files are provided alongside this
-# code). We fall back to a couple of common system locations too.
+# FONT NOTE
+# We now generate a real Word (.docx) file instead of a PDF. Word does
+# its own complex-script text shaping (reordering Sinhala pre-base
+# vowel signs etc. automatically), so we no longer need to bundle a
+# font file with this script or manually reorder any characters.
+#
+# The only requirement is that whoever OPENS the .docx has a Sinhala-
+# capable font installed. "Nirmala UI" ships with Windows 10/11 and
+# covers Sinhala, so it's used as the default below. If the machine
+# that opens the file is older or doesn't have it, change SINHALA_FONT
+# to another installed Sinhala font (e.g. "Iskoola Pota", which also
+# ships with Windows, or "Noto Sans Sinhala" if that's installed).
 # =====================================================================
-FONT_REGULAR_NAME = "SinhalaFont"
-FONT_BOLD_NAME = "SinhalaFont-Bold"
-
-_CANDIDATE_DIRS = [
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts"),
-    "/usr/share/fonts/truetype/sinhala",
-]
-
-def _find_font(filename_options):
-    for d in _CANDIDATE_DIRS:
-        for name in filename_options:
-            path = os.path.join(d, name)
-            if os.path.isfile(path):
-                return path
-    return None
-
-_regular_path = _find_font(["NotoSansSinhala-Regular.ttf", "lklug.ttf"])
-_bold_path = _find_font(["NotoSansSinhala-Bold.ttf", "lklug.ttf"])
-
-if _regular_path:
-    pdfmetrics.registerFont(TTFont(FONT_REGULAR_NAME, _regular_path))
-else:
-    FONT_REGULAR_NAME = "Helvetica"  # last-resort fallback (Sinhala glyphs will be missing)
-
-if _bold_path:
-    pdfmetrics.registerFont(TTFont(FONT_BOLD_NAME, _bold_path))
-else:
-    FONT_BOLD_NAME = "Helvetica-Bold"
-
-# Sinhala "pre-base" vowel signs (ෙ, ේ, ෛ) are stored AFTER their base
-# consonant in Unicode but must be drawn BEFORE it. ReportLab has no
-# complex-script shaping engine, so we reorder them ourselves.
-_PREBASE_VOWELS = "\u0DD9\u0DDA\u0DDB"  # ෙ ේ ෛ
-_reorder_pattern = re.compile(r'(.)([' + _PREBASE_VOWELS + r'])')
-
-def sn(text):
-    """Fix up Sinhala pre-base vowel sign order for correct rendering."""
-    if not text:
-        return text
-    return _reorder_pattern.sub(lambda m: m.group(2) + m.group(1), text)
+SINHALA_FONT = "Nirmala UI"
 
 
-# --- ReportLab Pure-Python PDF Generation Layout ---
-def generate_cash_sheet_pdf(invoices, total_amount):
-    buffer = io.BytesIO()
+def set_run_font(run, font_name=SINHALA_FONT, size=9, bold=False):
+    """Apply a font to a run, including the 'complex script' (w:cs) and
+    'east asia' slots — Sinhala is treated as a complex script by Word,
+    so w:cs must be set or Word may fall back to a default font for it."""
+    run.font.name = font_name
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.find(qn('w:rFonts'))
+    if rFonts is None:
+        rFonts = OxmlElement('w:rFonts')
+        rPr.append(rFonts)
+    rFonts.set(qn('w:ascii'), font_name)
+    rFonts.set(qn('w:hAnsi'), font_name)
+    rFonts.set(qn('w:eastAsia'), font_name)
+    rFonts.set(qn('w:cs'), font_name)
 
-    # Rule: > 35 invoices allows 3 pages, else strictly force a 2-page fit
-    is_large_dataset = len(invoices) > 35
 
-    # Margins dynamically adjusted based on the required page budget rule
-    margin_val = 36 if is_large_dataset else 26
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        rightMargin=margin_val, leftMargin=margin_val, topMargin=margin_val, bottomMargin=margin_val
-    )
-    body_elements = []
+def set_cell_text(cell, text, size=8, bold=False, align=WD_ALIGN_PARAGRAPH.CENTER):
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.alignment = align
+    run = p.add_run(text)
+    set_run_font(run, size=size, bold=bold)
+    return run
 
-    # Text Typography Styles
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'TitleStyle', parent=styles['Heading1'], fontName=FONT_BOLD_NAME,
-        fontSize=16, leading=20, alignment=1, spaceAfter=6, textColor=colors.HexColor("#000000")
-    )
-    meta_style = ParagraphStyle(
-        'MetaStyle', parent=styles['Normal'], fontName=FONT_BOLD_NAME,
-        fontSize=9.5, leading=13, spaceAfter=10, textColor=colors.HexColor("#000000")
-    )
-    section_style = ParagraphStyle(
-        'SectionStyle', parent=styles['Normal'], fontName=FONT_BOLD_NAME,
-        fontSize=10, leading=12, spaceBefore=6, spaceAfter=4, textColor=colors.HexColor("#000000")
-    )
-    cell_style = ParagraphStyle(
-        'CellStyle', parent=styles['Normal'], fontName=FONT_REGULAR_NAME,
-        fontSize=8, leading=10, alignment=1
-    )
-    cell_bold = ParagraphStyle(
-        'CellBold', parent=styles['Normal'], fontName=FONT_BOLD_NAME,
-        fontSize=8.5, leading=10.5, alignment=1
-    )
-    cell_right = ParagraphStyle(
-        'CellRight', parent=styles['Normal'], fontName=FONT_REGULAR_NAME,
-        fontSize=8.5, leading=10.5, alignment=2
-    )
-    label_style = ParagraphStyle(
-        'LabelStyle', parent=styles['Normal'], fontName=FONT_REGULAR_NAME,
-        fontSize=7.8, leading=9.5, alignment=0, leftIndent=4
-    )
-    label_bold_style = ParagraphStyle(
-        'LabelBoldStyle', parent=styles['Normal'], fontName=FONT_BOLD_NAME,
-        fontSize=7.8, leading=9.5, alignment=0, leftIndent=4
-    )
+
+def shade_cell(cell, color_hex):
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), color_hex)
+    tcPr.append(shd)
+
+
+def set_table_fixed_layout(table, col_widths_pt):
+    """Force Word to respect explicit column widths instead of autofitting."""
+    table.autofit = False
+    tbl = table._tbl
+    tblPr = tbl.tblPr
+    layout = OxmlElement('w:tblLayout')
+    layout.set(qn('w:type'), 'fixed')
+    tblPr.append(layout)
+    for row in table.rows:
+        for idx, width in enumerate(col_widths_pt):
+            row.cells[idx].width = Pt(width)
+    for idx, width in enumerate(col_widths_pt):
+        table.columns[idx].width = Pt(width)
+
+
+def add_heading_paragraph(doc, text, size=16, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=6):
+    p = doc.add_paragraph()
+    p.alignment = align
+    p.paragraph_format.space_after = Pt(space_after)
+    run = p.add_run(text)
+    set_run_font(run, size=size, bold=bold)
+    return p
+
+
+# --- Word Document Generation ---
+def generate_cash_sheet_docx(invoices, total_amount):
+    doc = Document()
+
+    section = doc.sections[0]
+    section.page_width = Cm(21.0)
+    section.page_height = Cm(29.7)
+    section.left_margin = Cm(1.0)
+    section.right_margin = Cm(1.0)
+    section.top_margin = Cm(1.0)
+    section.bottom_margin = Cm(1.0)
 
     # ==================== PAGE 1 : DAY CASH SHEET ====================
-    body_elements.append(Paragraph("KIST DAY CASH SHEET", title_style))
-    body_elements.append(Paragraph(
-        sn("දිනය : ___________________&nbsp;&nbsp;&nbsp;මාර්ගය : ___________________&nbsp;&nbsp;&nbsp;බිල්පත් ගණන : ___________________"),
-        meta_style
-    ))
+    add_heading_paragraph(doc, "KIST DAY CASH SHEET", size=16, bold=True)
 
-    # Column headers exactly as they appear in the KIST sample Word document
+    meta_p = doc.add_paragraph()
+    meta_p.paragraph_format.space_after = Pt(10)
+    meta_run = meta_p.add_run(
+        "දිනය : ___________________    මාර්ගය : ___________________    බිල්පත් ගණන : ___________________"
+    )
+    set_run_font(meta_run, size=10, bold=True)
+
     headers = [
-        "No", sn("බිල් අංකය"), sn("කඩේ නම"), sn("ප්‍රමාණය"), "BNW",
-        sn("කෑන්සල්"), sn("ඇඩ්ජස්ට්"), sn("ඩීස්"), sn("මුදල්"),
-        sn("ණය"), sn("චෙක්"), sn("රිටන්")
+        "No", "බිල් අංකය", "කඩේ නම", "ප්‍රමාණය", "BNW",
+        "කෑන්සල්", "ඇඩ්ජස්ට්", "ඩීස්", "මුදල්", "ණය", "චෙක්", "රිටන්"
     ]
-    table_data = [[Paragraph(h, cell_bold) for h in headers]]
+    col_widths = [22, 62, 90, 50, 32, 42, 42, 30, 45, 45, 45, 32]
 
-    # Inject active rows parsed from raw file
+    total_rows = 1 + len(invoices) + 5 + 1  # header + invoices + 5 blank + ST row
+    table = doc.add_table(rows=total_rows, cols=len(headers))
+    table.style = "Table Grid"
+
+    # Header row
+    for c, h in enumerate(headers):
+        set_cell_text(table.rows[0].cells[c], h, size=8.5, bold=True)
+
+    # Invoice rows
+    r = 1
     idx = 1
     for item in invoices:
-        table_data.append([
-            Paragraph(str(idx), cell_style), Paragraph(item['invoice'], cell_style), Paragraph("", cell_style),
-            Paragraph(f"{item['amount']:.2f}", cell_right),
-            Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style),
-            Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
-        ])
+        row_cells = table.rows[r].cells
+        set_cell_text(row_cells[0], str(idx), size=8)
+        set_cell_text(row_cells[1], item['invoice'], size=8)
+        set_cell_text(row_cells[2], "", size=8)
+        set_cell_text(row_cells[3], f"{item['amount']:.2f}", size=8.5, align=WD_ALIGN_PARAGRAPH.RIGHT)
+        for c in range(4, 12):
+            set_cell_text(row_cells[c], "", size=8)
+        r += 1
         idx += 1
 
-    # Standard blank spacer rows for manual adjustments
+    # 5 blank spacer rows
     for _ in range(5):
-        table_data.append([Paragraph(str(idx), cell_style)] + [Paragraph("", cell_style) for _ in range(11)])
+        row_cells = table.rows[r].cells
+        set_cell_text(row_cells[0], str(idx), size=8)
+        for c in range(1, 12):
+            set_cell_text(row_cells[c], "", size=8)
+        r += 1
         idx += 1
 
-    # System Sale summary anchor line put directly at the end after the 5 extra rows
-    table_data.append([
-        Paragraph("ST", cell_bold), Paragraph(sn("System Sale"), cell_bold), Paragraph("", cell_style),
-        Paragraph(f"{total_amount:,.2f}", ParagraphStyle('ST_R', parent=cell_right, fontName=FONT_BOLD_NAME)),
-        Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style),
-        Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style), Paragraph("", cell_style)
-    ])
+    # ST / System Sale summary row
+    row_cells = table.rows[r].cells
+    set_cell_text(row_cells[0], "ST", size=8.5, bold=True)
+    set_cell_text(row_cells[1], "System Sale", size=8.5, bold=True)
+    set_cell_text(row_cells[2], "", size=8)
+    set_cell_text(row_cells[3], f"{total_amount:,.2f}", size=8.5, bold=True, align=WD_ALIGN_PARAGRAPH.RIGHT)
+    for c in range(4, 12):
+        set_cell_text(row_cells[c], "", size=8)
+    for c in range(12):
+        shade_cell(row_cells[c], "EBF2F8")
 
-    # Perfectly Balanced Explicit Point Column Widths (Total width fits A4 printable profile seamlessly)
-    col_widths = [
-        22,  # No
-        62,  # Invoice Number (Perfect for clean non-wrapped header display)
-        90,  # Shop Name (Maintains an open handwriting buffer space)
-        50,  # Amount
-        32,  # BNW (Balanced for up to 4 digits without stacking header text)
-        42,  # Cancel (Stops breaking into 'Cance l')
-        42,  # Adjust
-        30,  # Dis
-        45,  # Cash
-        45,  # Credit
-        45,  # Cheque
-        32   # Rtn (Stops breaking into stacked individual characters)
-    ]
+    set_table_fixed_layout(table, col_widths)
 
-    main_table_style = TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.white),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#aaaaaa")),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 5.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5.5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 2),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#ebf2f8")),
-    ])
-
-    body_elements.append(Table(table_data, colWidths=col_widths, style=main_table_style))
-    body_elements.append(Spacer(1, 10))
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
 
     sales_labels = [
-        sn("බිස්කට් සෙල් : _______________________"),
-        sn("නෙට්ටා සෙල් : _______________________"),
-        sn("වතුර සෙල් : _______________________"),
-        sn("මුළු සේල් : _______________________"),
+        "බිස්කට් සෙල් : _______________________",
+        "නෙට්ටා සෙල් : _______________________",
+        "වතුර සෙල් : _______________________",
+        "මුළු සේල් : _______________________",
     ]
     for label in sales_labels:
-        body_elements.append(Paragraph(label, meta_style))
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run(label)
+        set_run_font(run, size=10, bold=True)
 
     # ==================== PAGE 2 ====================
-    body_elements.append(PageBreak())
-    page2_elements = build_page_two(
-        section_style, cell_style, cell_bold, cell_right,
-        label_style, label_bold_style, meta_style
-    )
-    body_elements.extend(page2_elements)
+    doc.add_page_break()
+    build_page_two(doc)
 
-    doc.build(body_elements)
+    buffer = io.BytesIO()
+    doc.save(buffer)
     buffer.seek(0)
     return buffer
 
 
-def build_page_two(section_style, cell_style, cell_bold, cell_right,
-                    label_style, label_bold_style, meta_style):
+def build_page_two(doc):
     """Builds the second page of the KIST cash sheet:
        1) Credit-bill payments-received table
        2) Cash balancing summary table
@@ -231,98 +207,89 @@ def build_page_two(section_style, cell_style, cell_bold, cell_right,
        4) Distance-travelled footer line
        Mirrors the layout of the supplied sample Word document.
     """
-    elements = []
 
     # ---- 1) ණය බිල් වලට මුදල් ලැබීම (Credit bill payments received) ----
-    elements.append(Paragraph(sn("ණය බිල් වලට මුදල් ලැබීම"), section_style))
+    add_heading_paragraph(doc, "ණය බිල් වලට මුදල් ලැබීම", size=11, bold=True,
+                           align=WD_ALIGN_PARAGRAPH.LEFT, space_after=4)
 
-    credit_headers = [
-        "NO", sn("බිල්පත් දිනය"), sn("කඩේ නම"), sn("ණය"),
-        sn("මුදල් ගෙවූ ප්‍රමාණය"), sn("ඉතිරිය")
-    ]
-    credit_table_data = [[Paragraph(h, cell_bold) for h in credit_headers]]
-    for i in range(1, 11):
-        credit_table_data.append(
-            [Paragraph(str(i), cell_style)] + [Paragraph("", cell_style) for _ in range(5)]
-        )
-
+    credit_headers = ["NO", "බිල්පත් දිනය", "කඩේ නම", "ණය", "මුදල් ගෙවූ ප්‍රමාණය", "ඉතිරිය"]
     credit_col_widths = [28, 75, 140, 65, 90, 85]
-    credit_style = TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#aaaaaa")),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-    ])
-    elements.append(Table(credit_table_data, colWidths=credit_col_widths, style=credit_style))
-    elements.append(Spacer(1, 8))
+    credit_table = doc.add_table(rows=11, cols=6)
+    credit_table.style = "Table Grid"
+    for c, h in enumerate(credit_headers):
+        set_cell_text(credit_table.rows[0].cells[c], h, size=8.5, bold=True)
+    for i in range(1, 11):
+        row_cells = credit_table.rows[i].cells
+        set_cell_text(row_cells[0], str(i), size=8)
+        for c in range(1, 6):
+            set_cell_text(row_cells[c], "", size=8)
+    set_table_fixed_layout(credit_table, credit_col_widths)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
     # ---- 2) මුදල් පත්‍ර බැලන්ස් කිරීම (Cash balancing) ----
-    elements.append(Paragraph(sn("මුදල් පත්‍ර බැලන්ස් කිරීම"), section_style))
+    add_heading_paragraph(doc, "මුදල් පත්‍ර බැලන්ස් කිරීම", size=11, bold=True,
+                           align=WD_ALIGN_PARAGRAPH.LEFT, space_after=4)
 
     balance_rows_labels = [
-        (sn("සිස්ටම් සෙල් එක"), True),
-        (sn("FOC"), False),
-        (sn("මුළු කැන්සල්"), False),
-        (sn("ශේෂය (1)"), True),
-        (sn("මුළු වට්ටම්"), False),
-        (sn("මුළු ඇඩ්ජස්ට්"), False),
-        (sn("මුළු රිටන්"), False),
-        (sn("ශේෂය (2)"), True),
-        (sn("මුළු මුදල්"), False),
-        (sn("මුළු ණය"), False),
-        (sn("මුළු චෙක්පත්"), False),
-        (sn("ශේෂය (3)"), True),
-        (sn("මුදල් ශේෂය"), True),
-        (sn("මුළු දින මුදල්"), False),
-        (sn("ලැබුණු මුළු ණය"), False),
-        (sn("මුළු වියදම්"), False),
-        (sn("බැංකුගත වටිනාකම"), False),
+        ("සිස්ටම් සෙල් එක", True),
+        ("FOC", False),
+        ("මුළු කැන්සල්", False),
+        ("ශේෂය (1)", True),
+        ("මුළු වට්ටම්", False),
+        ("මුළු ඇඩ්ජස්ට්", False),
+        ("මුළු රිටන්", False),
+        ("ශේෂය (2)", True),
+        ("මුළු මුදල්", False),
+        ("මුළු ණය", False),
+        ("මුළු චෙක්පත්", False),
+        ("ශේෂය (3)", True),
+        ("මුදල් ශේෂය", True),
+        ("මුළු දින මුදල්", False),
+        ("ලැබුණු මුළු ණය", False),
+        ("මුළු වියදම්", False),
+        ("බැංකුගත වටිනාකම", False),
     ]
-    balance_table_data = []
-    for label, is_bold in balance_rows_labels:
-        style = label_bold_style if is_bold else label_style
-        balance_table_data.append([Paragraph(label, style), Paragraph("", cell_style)])
-
     balance_col_widths = [300, 183]
-    balance_style = TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#aaaaaa")),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2.2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.2),
-    ])
-    elements.append(Table(balance_table_data, colWidths=balance_col_widths, style=balance_style))
-    elements.append(Spacer(1, 8))
+    balance_table = doc.add_table(rows=len(balance_rows_labels), cols=2)
+    balance_table.style = "Table Grid"
+    for i, (label, is_bold) in enumerate(balance_rows_labels):
+        row_cells = balance_table.rows[i].cells
+        set_cell_text(row_cells[0], label, size=8, bold=is_bold, align=WD_ALIGN_PARAGRAPH.LEFT)
+        set_cell_text(row_cells[1], "", size=8)
+    set_table_fixed_layout(balance_table, balance_col_widths)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
     # ---- 3) මුදල් ගණනය කිරීම (Cash note counting) ----
-    elements.append(Paragraph(sn("මුදල් ගණනය කිරීම"), section_style))
+    add_heading_paragraph(doc, "මුදල් ගණනය කිරීම", size=11, bold=True,
+                           align=WD_ALIGN_PARAGRAPH.LEFT, space_after=4)
 
-    note_headers = [sn("මුදල් නෝට්ටු"), sn("වටිනාකම")]
-    note_values = ["20", "50", "100", "500", "1000", "2000", "5000", sn("coins"), sn("Total")]
-    note_table_data = [[Paragraph(h, cell_bold) for h in note_headers]]
-    for i, note in enumerate(note_values):
-        style = cell_bold if note == sn("Total") else cell_style
-        note_table_data.append([Paragraph(note, style), Paragraph("", cell_style)])
-
+    note_headers = ["මුදල් නෝට්ටු", "වටිනාකම"]
+    note_values = ["20", "50", "100", "500", "1000", "2000", "5000", "coins", "Total"]
     note_col_widths = [240, 240]
-    note_style = TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#aaaaaa")),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#ebf2f8")),
-    ])
-    elements.append(Table(note_table_data, colWidths=note_col_widths, style=note_style))
-    elements.append(Spacer(1, 8))
+    note_table = doc.add_table(rows=1 + len(note_values), cols=2)
+    note_table.style = "Table Grid"
+    for c, h in enumerate(note_headers):
+        set_cell_text(note_table.rows[0].cells[c], h, size=8.5, bold=True)
+    for i, note in enumerate(note_values, start=1):
+        row_cells = note_table.rows[i].cells
+        is_total = (note == "Total")
+        set_cell_text(row_cells[0], note, size=8, bold=is_total)
+        set_cell_text(row_cells[1], "", size=8)
+        if is_total:
+            shade_cell(row_cells[0], "EBF2F8")
+            shade_cell(row_cells[1], "EBF2F8")
+    set_table_fixed_layout(note_table, note_col_widths)
+
+    doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
     # ---- 4) Footer: distance travelled ----
-    elements.append(Paragraph(
-        sn("ගමන් කළ දුර : ___________ &nbsp;&nbsp;&nbsp; KM : ___________ &nbsp;&nbsp;&nbsp; OOT : ___________"),
-        meta_style
-    ))
-
-    return elements
+    footer_p = doc.add_paragraph()
+    footer_run = footer_p.add_run(
+        "ගමන් කළ දුර : ___________    KM : ___________    OOT : ___________"
+    )
+    set_run_font(footer_run, size=10, bold=True)
 
 
 # --- Stateful Line-by-Line Multi-Format Text Extraction Engine ---
@@ -442,13 +409,13 @@ if uploaded_file is not None:
         st.success(f"Successfully processed {len(invoices)} invoices records from PDF. Identified System Sale Value: LKR {total_amt:,.2f}")
 
         with st.spinner("Compiling structural printable layout..."):
-            pdf_data = generate_cash_sheet_pdf(invoices, total_amt)
+            docx_data = generate_cash_sheet_docx(invoices, total_amt)
 
         st.download_button(
-            label="📥 Download Tailored Cash Sheet PDF",
-            data=pdf_data,
-            file_name="KIST_Day_Cash_Sheet.pdf",
-            mime="application/pdf"
+            label="📥 Download Tailored Cash Sheet (Word)",
+            data=docx_data,
+            file_name="KIST_Day_Cash_Sheet.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     else:
         st.error("Could not parse invoices structures. Please verify that the PDF contains valid invoice entries.")
